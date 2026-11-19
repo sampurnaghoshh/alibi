@@ -48,6 +48,15 @@ def test_list_skips_junk(tmp_path):
     assert list_investigations(tmp_path) == []
 
 
+def test_video_duration_without_ffprobe(tmp_path, make_video, monkeypatch):
+    """No ffprobe on PATH -> duration still comes from OpenCV."""
+    import app.storage as storage
+    monkeypatch.setattr(storage.shutil, "which", lambda name: None)
+    video = make_video(tmp_path / "clip.mp4", seconds=3, fps=10)
+    assert storage.probe_duration(video, "video/mp4") == pytest.approx(3.0, abs=0.2)
+    assert storage.probe_duration(video, "image/png") is None
+
+
 def test_parse_posted_at():
     assert parse_posted_at("2026-11-19").utcoffset().total_seconds() == 5.5 * 3600
     assert parse_posted_at("2026-11-19T10:00:00Z").utcoffset().total_seconds() == 0

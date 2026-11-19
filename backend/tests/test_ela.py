@@ -104,6 +104,8 @@ def test_video_keyframe(tmp_path, make_video):
     video = make_video(tmp_path / "clip.mp4", seconds=3, fps=10)
     [f] = run_witnesses(_ctx(tmp_path, _ref(video, mime="video/mp4")), [ElaWitness()])
     assert f.status == "inconclusive" and f.reliability == "low"
+    assert f.title == "Error-level heatmap of a video keyframe (visual aid only)"   # never "localised" for video
+    assert f.locations[0].bbox == [0.0, 0.0, 1.0, 1.0]
     assert f.details["frame_s"] == pytest.approx(1.5, abs=0.11)
     assert f.locations[0].frame_s == f.details["frame_s"]
     assert any("video codec" in lim for lim in f.limitations)

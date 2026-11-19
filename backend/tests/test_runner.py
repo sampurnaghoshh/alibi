@@ -64,11 +64,24 @@ class ReturnsNothing(Witness):
 
 def test_crash_becomes_inconclusive(ctx):
     events = []
-    [f] = run_witnesses(ctx, [Crashing()], log=lambda e, d: events.append((e, d)))
+    [f] = run_witnesses(ctx, [Crashing()], log=lambda e, d, data=None: events.append((e, d)))
     assert (f.status, f.reliability) == ("inconclusive", "low")
     assert "RuntimeError: boom" in f.limitations[0]
     assert f.alternatives
-    assert events[0][0] == "witness_failed"
+    assert [e for e, _ in events] == ["witness_started", "witness_failed"]
+
+
+def test_events_logged_in_real_completion_order(ctx):
+    """The live stream must show a fast witness finishing before a slow one listed earlier."""
+    events = []
+    slow = Slow()
+    slow.run = lambda c: (time.sleep(0.4), slow.placeholder())[1]
+    findings = run_witnesses(ctx, [slow, Fast()], log=lambda e, d, data=None: events.append((e, data)))
+    done = [data["witness"] for e, data in events if e == "witness_completed"]
+    assert done == ["ela", "lipsync"]                                   # real order
+    assert [f.witness for f in findings] == ["lipsync", "ela"]          # result keeps display order
+    completed = next(data for e, data in events if e == "witness_completed")
+    assert completed["findings"][0]["witness"] == "ela" and completed["elapsed_ms"] >= 0
 
 
 def test_timeout_becomes_inconclusive(ctx):
@@ -87,6 +100,21 @@ def test_not_applicable(ctx):
 def test_contract_violation_becomes_inconclusive(ctx, witness):
     [f] = run_witnesses(ctx, [witness])
     assert f.status == "inconclusive" and f.limitations[0].startswith("Error:")
+
+
+class Fast(Witness):
+    name = "ela"
+    def applicable(self, ctx): return True
+    def run(self, ctx): return self.placeholder()
+
+
+def test_each_witness_timed_on_its_own(ctx):
+    """A fast witness collected after a slow one must not inherit the slow one's time."""
+    slow = Slow()
+    slow.run = lambda c: (time.sleep(0.5), slow.placeholder())[1]
+    f_slow, f_fast = run_witnesses(ctx, [slow, Fast()])
+    assert f_slow.elapsed_ms >= 450
+    assert f_fast.elapsed_ms < 200
 
 
 def test_all_stubs_run_cleanly(ctx):

@@ -17,7 +17,6 @@ Usage (from the repo root, with the backend venv):
 from __future__ import annotations
 
 import argparse
-import re
 import sys
 import tempfile
 from pathlib import Path
@@ -27,24 +26,13 @@ sys.path.insert(0, str(REPO / "backend"))
 
 from app import config  # noqa: E402
 from app.claims.extract import extract_claims  # noqa: E402
+from app.demo import parse_cases  # noqa: E402 - same parser as POST /api/demo/{case}
 from app.runner import run_witnesses  # noqa: E402
 from app.storage import parse_posted_at  # noqa: E402
 from app.witnesses.base import InvestigationContext  # noqa: E402
 from app.witnesses.weather import WeatherWitness  # noqa: E402
 
 CAPTIONS = REPO / "demo" / "captions.md"
-
-
-def parse_cases(path: Path) -> dict[str, dict[str, str]]:
-    """'## name' headings followed by 'key: value' lines."""
-    cases: dict[str, dict[str, str]] = {}
-    current = None
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if m := re.match(r"^##\s+(\S+)", line):
-            current = cases.setdefault(m.group(1), {})
-        elif current is not None and (m := re.match(r"^(\w+):\s*(.*)$", line)):
-            current[m.group(1)] = m.group(2).strip()
-    return cases
 
 
 def cache_files() -> int:

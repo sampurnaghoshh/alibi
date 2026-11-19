@@ -338,6 +338,10 @@ class Investigation(_Model):
     id: str = Field(pattern=INVESTIGATION_ID_PATTERN, description="inv_YYYYMMDD_HHMMSS_xxxx")
     created_at: AwareDatetime
     posted_at: AwareDatetime = Field(description="user-supplied 'when was this shared', default now")
+    parent_id: Optional[str] = Field(
+        default=None, pattern=INVESTIGATION_ID_PATTERN,
+        description="Set on a caption re-run: the investigation whose stored files were re-used.",
+    )
     caption: str = ""
     inputs: list[InputFile] = Field(default_factory=list)
     claims: list[Claim] = Field(default_factory=list)
@@ -405,6 +409,7 @@ class InvestigationSummary(_Model):
 
     id: str = Field(pattern=INVESTIGATION_ID_PATTERN)
     created_at: AwareDatetime
+    parent_id: Optional[str] = Field(default=None, description="set on caption re-runs")
     caption: str
     inputs: list[str] = Field(description="input file names")
     headline: Headline
@@ -417,6 +422,7 @@ class InvestigationSummary(_Model):
         return cls(
             id=inv.id,
             created_at=inv.created_at,
+            parent_id=inv.parent_id,
             caption=inv.caption,
             inputs=[i.name for i in inv.inputs],
             headline=inv.assessment.headline,

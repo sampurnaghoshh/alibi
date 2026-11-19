@@ -118,6 +118,7 @@ def build(manifest: Path, out: Path, fps: float) -> tuple[int, list[str]]:
     out.write_text(json.dumps({
         "built_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "sample_fps": fps,
+        "frame_max_width": config.FRAME_SAMPLE_MAX_WIDTH,   # frames shrunk to this before hashing
         "hash": "imagehash.phash, 64-bit, hex",
         "clips": built,
     }, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")

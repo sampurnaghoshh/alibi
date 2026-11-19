@@ -85,6 +85,70 @@ def test_phash_matches_copies_not_different_scenes(tmp_path):
     assert hamming(h["orig.png"], h["other.png"]) > 8
 
 
+def _scenes_video(make_video, path, w=1280, h=720, seconds=4, fps=10):
+    """Distinct smooth scenes per second, wider than the 640 px hashing width."""
+    rng = np.random.default_rng(7)
+    scenes = [np.asarray(Image.fromarray(rng.integers(0, 256, (9, 16, 3), dtype=np.uint8))
+                         .resize((w, h), Image.BICUBIC))[:, :, ::-1].copy() for _ in range(seconds)]
+    return make_video(path, seconds=seconds, fps=fps, size=(w, h), frame_fn=lambda i: scenes[i // fps])
+
+
+def test_archive_and_witness_hashes_are_identical(tmp_path, make_video):
+    """The witness samples an uploaded copy with the same function; hashes must match the archive exactly."""
+    import shutil
+
+    from app import config
+    from app.media import phash_hex, sample_frames
+
+    archive_dir = tmp_path / "archive"
+    archive_dir.mkdir()
+    _scenes_video(make_video, archive_dir / "clip.mp4")
+    _scene(5).resize((1600, 1200)).save(archive_dir / "photo.jpg", quality=92)
+    manifest = _write_manifest(archive_dir, [_entry("clip_v", "clip.mp4"), _entry("clip_p", "photo.jpg")])
+    out = tmp_path / "archive.json"
+    assert build_archive.main(["--manifest", str(manifest), "--out", str(out)]) == 0
+    data = json.loads(out.read_text(encoding="utf-8"))
+    assert data["frame_max_width"] == config.FRAME_SAMPLE_MAX_WIDTH == 640
+    clips = {c["clip_id"]: c for c in data["clips"]}
+
+    # What the prior_appearance witness does with an upload stored somewhere else:
+    uploads = tmp_path / "originals"
+    uploads.mkdir()
+    for name, cid in (("clip.mp4", "clip_v"), ("photo.jpg", "clip_p")):
+        copy = uploads / f"in_1_{name}"
+        shutil.copyfile(archive_dir / name, copy)
+        frames = sample_frames(copy, config.PRIOR_SAMPLE_FPS)
+        assert [phash_hex(img) for _, img in frames] == clips[cid]["frame_hashes"]
+        assert [t for t, _ in frames] == clips[cid]["frame_times_s"]
+        assert all(img.width == 640 for _, img in frames)           # downscaled before hashing
+
+
+def test_frame_at_seeks_to_the_right_full_resolution_frame(tmp_path, make_video):
+    """Seeking must return exactly the frame that decoding from the start reaches (pixel-identical)."""
+    import cv2
+
+    from app.media import frame_at
+
+    video = make_video(tmp_path / "count.mp4", seconds=2.5, fps=10, size=(320, 240),
+                       frame_fn=lambda i: np.full((240, 320, 3), 10 * i, dtype=np.uint8))
+    cap = cv2.VideoCapture(str(video))
+    decoded = []
+    while True:
+        ok, bgr = cap.read()
+        if not ok:
+            break
+        decoded.append(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB))
+    cap.release()
+    assert len(decoded) == 25
+
+    for t, idx in ((0.0, 0), (1.0, 10), (1.05, 11), (2.3, 23), (99.0, 24)):
+        ft, img = frame_at(video, t)
+        assert ft == pytest.approx(idx / 10)
+        assert img.size == (320, 240)                                    # ELA needs full resolution
+        assert np.array_equal(np.asarray(img), decoded[idx])             # exactly that frame
+        assert abs(int(np.asarray(img).mean()) - 10 * idx) <= 4          # and visibly not a neighbour
+
+
 def test_video_sampled_at_one_frame_per_second(tmp_path, make_video):
     rng = np.random.default_rng(1)
     scenes = [rng.integers(0, 256, (64, 64, 3), dtype=np.uint8) for _ in range(3)]

@@ -8,15 +8,17 @@ Runs witnesses safely (principle 5: no module may crash an investigation). Owner
 - A witness whose applicable() is False gets a not_applicable finding.
 - Python threads cannot be killed: a timed-out witness keeps running in the
   background, but its result is ignored.
+- Events are logged in the order things really happen (witness_started when a witness
+  begins, witness_completed / witness_failed the moment it finishes, with its findings),
+  so the live event stream shows the real pipeline. The returned list keeps display order.
 """
 
 from __future__ import annotations
 
 import logging
 import time
-from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import TimeoutError as FutureTimeout
-from typing import Callable, Optional
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
+from typing import Any, Callable, Optional
 
 from app import config
 from app.schemas import Finding
@@ -24,7 +26,8 @@ from app.witnesses.base import InvestigationContext, Witness
 
 log_ = logging.getLogger("alibi.runner")
 
-LogFn = Callable[[str, str], None]   # (event, detail) -> None, e.g. RunStore.log
+# (event, detail, data=None) -> None, e.g. RunStore.log. Called from worker threads too.
+LogFn = Callable[..., Any]
 
 
 def all_witnesses() -> list[Witness]:
@@ -77,11 +80,17 @@ def not_applicable_finding(witness: Witness) -> Finding:
 
 # --- running ----------------------------------------------------------------
 
-def _run_one(witness: Witness, ctx: InvestigationContext) -> list[Finding]:
-    """Runs inside a worker thread. Exceptions propagate to the caller via the future."""
-    if not witness.applicable(ctx):
-        return [not_applicable_finding(witness)]
-    return witness.run(ctx)
+def _run_one(witness: Witness, ctx: InvestigationContext, log: LogFn) -> tuple[object, Exception | None, int]:
+    """Runs inside a worker thread. Returns (output, error, elapsed_ms) so each witness
+    is timed on its own, not from the start of the whole batch."""
+    log("witness_started", witness.name,
+        data={"witness": witness.name, "family": witness.family, "label": witness.label})
+    t0 = time.monotonic()
+    try:
+        output = [not_applicable_finding(witness)] if not witness.applicable(ctx) else witness.run(ctx)
+        return output, None, int((time.monotonic() - t0) * 1000)
+    except Exception as exc:  # noqa: BLE001 - handed back to the collector, which logs it
+        return None, exc, int((time.monotonic() - t0) * 1000)
 
 
 def _check_output(witness: Witness, output: object, ctx: InvestigationContext) -> list[Finding]:
@@ -109,39 +118,56 @@ def run_witnesses(
     log: Optional[LogFn] = None,
     timeouts: Optional[dict[str, float]] = None,
 ) -> list[Finding]:
-    """Run witnesses in parallel; always returns findings, never raises."""
+    """Run witnesses in parallel; always returns findings (in display order), never raises."""
     witnesses = all_witnesses() if witnesses is None else witnesses
-    log = log or (lambda event, detail: None)
+    log = log or (lambda event, detail, data=None: None)
     timeouts = timeouts or {}
-    results: list[Finding] = []
+    by_index: dict[int, list[Finding]] = {}
+
+    def finish(i: int, w: Witness, findings: list[Finding], event: str, elapsed_ms: int) -> None:
+        """Record one witness's result and log it right away (real completion order)."""
+        for f in findings:
+            f.elapsed_ms = elapsed_ms
+        by_index[i] = findings
+        statuses = ", ".join(f.status for f in findings)
+        log(event, f"{w.name}: {statuses} ({elapsed_ms} ms)", data={
+            "witness": w.name, "elapsed_ms": elapsed_ms,
+            "findings": [f.model_dump(mode="json") for f in findings],
+        })
 
     pool = ThreadPoolExecutor(max_workers=max(1, len(witnesses)), thread_name_prefix="witness")
     try:
         started = time.monotonic()
-        futures = [(w, pool.submit(_run_one, w, ctx)) for w in witnesses]
-
-        for w, fut in futures:  # collect in fixed display order
-            limit = timeouts.get(w.name, timeout_for(w))
-            remaining = max(0.0, limit - (time.monotonic() - started))
-            try:
-                findings = _check_output(w, fut.result(timeout=remaining), ctx)
-                event = "witness_completed"
-            except FutureTimeout:
-                findings = [failure_finding(w, f"did not finish within {limit:g} s")]
-                event = "witness_failed"
-            except Exception as exc:  # noqa: BLE001 - principle 5
-                log_.exception("witness %s failed", w.name)
-                findings = [failure_finding(w, f"{type(exc).__name__}: {exc}")]
-                event = "witness_failed"
-
-            elapsed_ms = int((time.monotonic() - started) * 1000)
-            for f in findings:
-                f.elapsed_ms = elapsed_ms
-            statuses = ", ".join(f.status for f in findings)
-            log(event, f"{w.name}: {statuses} ({elapsed_ms} ms)")
-            results.extend(findings)
+        futures: dict[Future, int] = {pool.submit(_run_one, w, ctx, log): i for i, w in enumerate(witnesses)}
+        deadline = {fut: started + timeouts.get(witnesses[i].name, timeout_for(witnesses[i]))
+                    for fut, i in futures.items()}
+        pending = set(futures)
+        while pending:
+            nearest = min(deadline[f] for f in pending)
+            done, pending = wait(pending, timeout=max(0.0, nearest - time.monotonic()), return_when=FIRST_COMPLETED)
+            for fut in done:
+                i = futures[fut]
+                w = witnesses[i]
+                output, error, elapsed_ms = fut.result()
+                try:
+                    if error is not None:
+                        raise error
+                    finish(i, w, _check_output(w, output, ctx), "witness_completed", elapsed_ms)
+                except Exception as exc:  # noqa: BLE001 - principle 5
+                    log_.error("witness %s failed", w.name, exc_info=exc)
+                    finish(i, w, [failure_finding(w, f"{type(exc).__name__}: {exc}")], "witness_failed", elapsed_ms)
+            now_ = time.monotonic()
+            for fut in [f for f in pending if deadline[f] <= now_]:
+                i = futures[fut]
+                w = witnesses[i]
+                limit = timeouts.get(w.name, timeout_for(w))
+                finish(i, w, [failure_finding(w, f"did not finish within {limit:g} s")], "witness_failed",
+                       int(limit * 1000))
+                pending.discard(fut)
     finally:
         pool.shutdown(wait=False, cancel_futures=True)
+
+    results = [f for i in range(len(witnesses)) for f in by_index.get(i, [])]
 
     # Finding ids must be unique across the investigation.
     seen: set[str] = set()

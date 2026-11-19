@@ -221,7 +221,7 @@ def run_cli(witness: Witness, argv: Optional[list[str]] = None) -> list[Finding]
         artifacts_dir=artifacts,
     )
 
-    findings = run_witnesses(ctx, [witness], log=lambda ev, d: print(f"[{ev}] {d}", file=sys.stderr))
+    findings = run_witnesses(ctx, [witness], log=lambda ev, d, data=None: print(f"[{ev}] {d}", file=sys.stderr))
     sys.stdout.reconfigure(encoding="utf-8")  # Windows console: allow "–", "°" etc.
     print(json.dumps([f.model_dump(mode="json") for f in findings], indent=2, ensure_ascii=False))
     print(f"artifacts: {artifacts}", file=sys.stderr)
