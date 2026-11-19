@@ -89,6 +89,21 @@ def test_contract_violation_becomes_inconclusive(ctx, witness):
     assert f.status == "inconclusive" and f.limitations[0].startswith("Error:")
 
 
+class Fast(Witness):
+    name = "ela"
+    def applicable(self, ctx): return True
+    def run(self, ctx): return self.placeholder()
+
+
+def test_each_witness_timed_on_its_own(ctx):
+    """A fast witness collected after a slow one must not inherit the slow one's time."""
+    slow = Slow()
+    slow.run = lambda c: (time.sleep(0.5), slow.placeholder())[1]
+    f_slow, f_fast = run_witnesses(ctx, [slow, Fast()])
+    assert f_slow.elapsed_ms >= 450
+    assert f_fast.elapsed_ms < 200
+
+
 def test_all_stubs_run_cleanly(ctx):
     findings = run_witnesses(ctx)
     assert {f.witness for f in findings} == {w.name for w in all_witnesses()}

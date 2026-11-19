@@ -380,10 +380,20 @@ alibi/
 | POST | `/api/investigations` | multipart: `files[]`, `caption`, `posted_at` → runs synchronously, returns `Investigation` |
 | GET | `/api/investigations/{id}` | fetch a saved investigation |
 | GET | `/api/fixture` | the Case A sample investigation (`shared/fixtures/sample_investigation.json`) for frontend work |
+| GET | `/api/demo` | preset cases from `demo/captions.md` (for the Case A / Case B buttons) |
+| POST | `/api/demo/{case_name}` | run a preset case (its files, caption, posted_at) with no file picking → `Investigation` |
 | GET | `/api/investigations` | list past runs (history page) |
 | GET | `/api/files/{inv_id}/{path}` | serve originals (read-only) and artifacts |
 | GET | `/api/investigations/{id}/report` | printable HTML report (browser → Save as PDF) |
 | GET | `/api/health` | witness availability (ffmpeg/exiftool found? LLM configured?) |
+
+**For Dhruva: demo buttons.** `GET /api/demo` returns `[{ "name", "caption", "posted_at", "files", "expect", "ready", "problem" }]`, e.g. `{"name": "case_a", ..., "ready": false, "problem": "The demo file 'demo/case_a/clip.mp4' does not exist yet. ..."}`. Enable a button only when `ready` is true, and show `problem` as its tooltip otherwise. Clicking runs `POST /api/demo/case_a` (no body) and returns a normal `Investigation`, so navigate to `/investigation/{id}` as after an upload. A case that isn't ready returns **404** with the reason in `detail`.
+
+**Upload rules** (`POST /api/investigations`; errors come back as `{"detail": "<friendly message>"}`, so show `detail` to the user):
+- At most **5 files**, each at most **200 MB**, none empty → otherwise **422** (count / empty) or **413** (too large).
+- Only images, video and audio, checked from the file's actual bytes, not its extension → otherwise **415**. Supported: JPEG, PNG, WebP, GIF, BMP, TIFF, HEIC/AVIF, MP4/MOV/3GP, WebM/MKV, AVI, MP3, WAV, M4A/AAC, OGG/Opus, FLAC, AMR. The stored `inputs[].mime` is the detected type.
+- If any file is rejected, nothing is stored. A file that passes but is corrupt still returns **200**, with inconclusive findings that explain the error.
+- A bad "Shared on" date, or no file and no caption → **422**.
 
 Synchronous is fine for the demo (target < 20 s for a 15 s clip). The frontend **reveals findings one by one** with a staggered animation for the demo effect.
 

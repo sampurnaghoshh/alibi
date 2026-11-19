@@ -67,17 +67,29 @@ def parse_posted_at(value: Optional[str]) -> datetime:
 
 
 def probe_duration(path: Path, mime: str) -> Optional[float]:
-    """Duration in seconds for audio/video via ffprobe; None if not media or ffprobe is missing."""
-    if not mime.startswith(("video/", "audio/")) or not shutil.which("ffprobe"):
+    """Duration in seconds for audio/video: ffprobe if installed, else OpenCV for video.
+    None for other files or when neither can read it."""
+    if not mime.startswith(("video/", "audio/")):
         return None
-    try:
-        out = subprocess.run(
-            ["ffprobe", "-v", "quiet", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)],
-            capture_output=True, text=True, timeout=15,
-        ).stdout.strip()
-        return round(float(out), 3) if out else None
-    except (subprocess.SubprocessError, ValueError, OSError):
-        return None
+    if shutil.which("ffprobe"):
+        try:
+            out = subprocess.run(
+                ["ffprobe", "-v", "quiet", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)],
+                capture_output=True, text=True, timeout=15,
+            ).stdout.strip()
+            if out:
+                return round(float(out), 3)
+        except (subprocess.SubprocessError, ValueError, OSError):
+            pass
+    if mime.startswith("video/"):
+        try:
+            from app.media import video_info  # noqa: PLC0415 - OpenCV is heavy, load only when needed
+
+            fps, count = video_info(path)
+            return round(count / fps, 3) if count and fps else None
+        except Exception:  # noqa: BLE001 - duration is optional metadata
+            return None
+    return None
 
 
 # --- one investigation on disk ------------------------------------------------
@@ -105,8 +117,10 @@ class RunStore:
 
     # Originals ---------------------------------------------------------------
 
-    def save_original(self, file_id: str, filename: str, src: BinaryIO, mime: Optional[str] = None) -> tuple[InputFile, Path]:
-        """Copy an upload into originals/, hash it while copying, then make it read-only."""
+    def save_original(self, file_id: str, filename: str, src: BinaryIO, mime: Optional[str] = None,
+                      declared_mime: Optional[str] = None) -> tuple[InputFile, Path]:
+        """Copy an upload into originals/, hash it while copying, then make it read-only.
+        `mime` is the type detected from content; `declared_mime` (from the client) is only logged."""
         import mimetypes
 
         dest = self.originals_dir / f"{file_id}_{safe_name(filename)}"
@@ -129,7 +143,10 @@ class RunStore:
             duration_s=probe_duration(dest, mime),
             stored_path=dest.relative_to(self.run_dir).as_posix(),
         )
-        self.log("file_received", f"{filename} sha256={info.sha256} stored read-only at {info.stored_path}")
+        detail = f"{filename} sha256={info.sha256} stored read-only at {info.stored_path}"
+        if declared_mime and declared_mime not in (mime, "application/octet-stream"):
+            detail += f" (declared {declared_mime}, detected {mime} from file content)"
+        self.log("file_received", detail)
         return info, dest
 
     def verify_original(self, info: InputFile) -> bool:

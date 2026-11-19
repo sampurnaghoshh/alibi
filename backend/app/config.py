@@ -41,6 +41,14 @@ DEFAULT_TZ = timezone(timedelta(hours=5, minutes=30))
 # API
 CORS_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"]
 
+# Upload limits (checked before anything is stored)
+MAX_UPLOAD_FILES = 5
+MAX_UPLOAD_BYTES = 200 * 1024 * 1024        # per file
+
+# Demo presets (POST /api/demo/{case}): cases are read from this file; file paths in it are
+# relative to the repo root and must stay inside demo/.
+DEMO_CAPTIONS = REPO_ROOT / "demo" / "captions.md"
+
 # Runner: per-witness time limit in seconds (§6). Witnesses run in parallel.
 WITNESS_TIMEOUT_S = 30.0
 WITNESS_TIMEOUT_OVERRIDES_S = {"lipsync": 90.0}

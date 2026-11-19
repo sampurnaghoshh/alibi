@@ -125,7 +125,15 @@ class ElaWitness(Witness):
         res.heatmap.save(ctx.artifact_path(name))
         where = "the image" if frame_s is None else f"the keyframe at {frame_s:.1f} s"
 
-        if res.hotspot_bbox:
+        if inp.kind == "video":
+            # Video frames are already compressed by the video codec; textured areas light up on
+            # genuine footage too. So for video: neutral wording, whole-frame location, and the
+            # brightest region only in details (calibrated on a genuine phone clip).
+            title = "Error-level heatmap of a video keyframe (visual aid only)"
+            summary = (f"Error-level analysis of {where}. Brighter areas usually follow edges and textures; "
+                       f"in video frames this is not a reliable sign of editing (mean level {res.mean_level:.1f} of 255).")
+            bbox = [0.0, 0.0, 1.0, 1.0]
+        elif res.hotspot_bbox:
             title = "Localised error-level differences visible in the heatmap"
             summary = (f"Error-level analysis of {where} shows a region with higher error levels than the rest "
                        f"({res.hotspot_fraction:.1%} of blocks). This is a visual cue for a human reviewer only.")

@@ -2,6 +2,8 @@
 ALIBI API (CLAUDE.md §8). Owner: Sampurna.
 
 POST /api/investigations runs the real pipeline (app/pipeline.py) and saves the run under data/runs/.
+Uploads are validated first (app/uploads.py): max 5 files, 200 MB each, real image/video/audio content.
+GET /api/demo + POST /api/demo/{case} run the presets in demo/captions.md (no file picking).
 GET /api/fixture serves the Case A sample investigation for frontend work.
 
 Run (from backend/):  uvicorn app.main:app --reload --port 8000
@@ -19,11 +21,13 @@ from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import ValidationError
 
 from app import config
+from app.demo import load_cases
 from app.pipeline import Upload, run_investigation
 from app.report import render_report
 from app.runner import all_witnesses
 from app.schemas import Investigation, InvestigationSummary
 from app.storage import RunStore, list_investigations, parse_posted_at
+from app.uploads import UploadError, check_count, validate_upload
 
 log = logging.getLogger("alibi.api")
 
@@ -59,20 +63,63 @@ def create_investigation(   # sync on purpose: FastAPI runs it in a worker threa
     try:
         posted = parse_posted_at(posted_at)
     except ValueError:
-        raise HTTPException(422, "posted_at must be an ISO date or datetime, e.g. 2026-11-19")
+        raise HTTPException(422, "The 'Shared on' date must be a date like 2026-11-19.")
     files = files or []
     if not files and not caption.strip():
-        raise HTTPException(422, "provide at least one file or a caption")
+        raise HTTPException(422, "Add at least one file or a caption to investigate.")
 
-    uploads = [
-        Upload(filename=f.filename or f"upload_{n}", stream=f.file, mime=f.content_type)
-        for n, f in enumerate(files, 1)
-    ]
+    # Validate everything BEFORE storing anything: count, size, real content type.
+    try:
+        check_count(len(files))
+        checked = [
+            validate_upload(f.filename or f"upload_{n}", f.file, f.content_type, f.size)
+            for n, f in enumerate(files, 1)
+        ]
+    except UploadError as exc:
+        raise HTTPException(exc.status, exc.message)
+    return _run([Upload(c.filename, c.stream, c.mime, c.declared_mime) for c in checked], caption, posted)
+
+
+def _run(uploads: list[Upload], caption: str, posted) -> Investigation:
+    """Run the pipeline. Witness problems never get here (they become inconclusive findings);
+    anything that does is a server bug, reported as a 500 with a readable message."""
     try:
         return run_investigation(uploads, caption, posted)
     except ValidationError as exc:  # an assembled investigation broke the contract: a bug, not user error
         log.exception("investigation failed contract validation")
-        raise HTTPException(500, f"investigation failed contract validation: {exc.error_count()} errors")
+        raise HTTPException(500, f"The investigation could not be assembled ({exc.error_count()} contract errors). This is a server bug.")
+    except Exception as exc:  # noqa: BLE001
+        log.exception("investigation failed")
+        raise HTTPException(500, f"The investigation could not be completed: {type(exc).__name__}: {exc}")
+
+
+@app.get("/api/demo")
+def list_demo_cases() -> list[dict[str, Any]]:
+    """Preset cases from demo/captions.md: [{name, caption, posted_at, files, expect, ready, problem}]."""
+    return [c.public() for c in load_cases().values()]
+
+
+@app.post("/api/demo/{case_name}", response_model=Investigation)
+def run_demo_case(case_name: str) -> Investigation:
+    """Run the pipeline on a preset case (its files, caption and posted_at) with no file picking."""
+    cases = load_cases()
+    case = cases.get(case_name)
+    if case is None:
+        known = ", ".join(cases) or "none"
+        raise HTTPException(404, f"No demo case named '{case_name}'. Available: {known}.")
+    if not case.ready:
+        raise HTTPException(404, f"Demo case '{case_name}' is not ready: {case.problem}")
+    posted = parse_posted_at(None if case.posted_at.upper() in ("", "TODO") else case.posted_at)
+
+    handles = [open(p, "rb") for p in case.paths]
+    try:
+        checked = [validate_upload(p.name, fh) for p, fh in zip(case.paths, handles)]
+        return _run([Upload(c.filename, c.stream, c.mime) for c in checked], case.caption, posted)
+    except UploadError as exc:
+        raise HTTPException(exc.status, f"Demo case '{case_name}': {exc.message}")
+    finally:
+        for fh in handles:
+            fh.close()
 
 
 @app.get("/api/investigations", response_model=list[InvestigationSummary])

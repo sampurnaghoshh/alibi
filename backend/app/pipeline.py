@@ -30,7 +30,8 @@ log = logging.getLogger("alibi.pipeline")
 class Upload:
     filename: str
     stream: BinaryIO
-    mime: Optional[str] = None
+    mime: Optional[str] = None              # detected from content (app/uploads.py)
+    declared_mime: Optional[str] = None     # what the client claimed; logged if different
 
 
 def _claims(caption: str, posted_at: datetime, store: RunStore) -> list[Claim]:
@@ -59,7 +60,7 @@ def run_investigation(
     # 1. Preserve originals (read-only, hashed, logged as file_received).
     inputs, refs = [], []
     for n, up in enumerate(uploads, 1):
-        info, path = store.save_original(f"in_{n}", up.filename, up.stream, up.mime)
+        info, path = store.save_original(f"in_{n}", up.filename, up.stream, up.mime, up.declared_mime)
         inputs.append(info)
         refs.append(InputRef(
             file_id=info.file_id, name=info.name, mime=info.mime, size=info.size,

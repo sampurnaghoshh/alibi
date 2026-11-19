@@ -77,11 +77,15 @@ def not_applicable_finding(witness: Witness) -> Finding:
 
 # --- running ----------------------------------------------------------------
 
-def _run_one(witness: Witness, ctx: InvestigationContext) -> list[Finding]:
-    """Runs inside a worker thread. Exceptions propagate to the caller via the future."""
-    if not witness.applicable(ctx):
-        return [not_applicable_finding(witness)]
-    return witness.run(ctx)
+def _run_one(witness: Witness, ctx: InvestigationContext) -> tuple[object, Exception | None, int]:
+    """Runs inside a worker thread. Returns (output, error, elapsed_ms) so each witness
+    is timed on its own, not from the start of the whole batch."""
+    t0 = time.monotonic()
+    try:
+        output = [not_applicable_finding(witness)] if not witness.applicable(ctx) else witness.run(ctx)
+        return output, None, int((time.monotonic() - t0) * 1000)
+    except Exception as exc:  # noqa: BLE001 - handed back to the collector, which logs it
+        return None, exc, int((time.monotonic() - t0) * 1000)
 
 
 def _check_output(witness: Witness, output: object, ctx: InvestigationContext) -> list[Finding]:
@@ -123,18 +127,24 @@ def run_witnesses(
         for w, fut in futures:  # collect in fixed display order
             limit = timeouts.get(w.name, timeout_for(w))
             remaining = max(0.0, limit - (time.monotonic() - started))
+            elapsed_ms = None
             try:
-                findings = _check_output(w, fut.result(timeout=remaining), ctx)
+                output, error, elapsed_ms = fut.result(timeout=remaining)
+                if error is not None:
+                    raise error
+                findings = _check_output(w, output, ctx)
                 event = "witness_completed"
             except FutureTimeout:
                 findings = [failure_finding(w, f"did not finish within {limit:g} s")]
                 event = "witness_failed"
+                elapsed_ms = int(limit * 1000)
             except Exception as exc:  # noqa: BLE001 - principle 5
-                log_.exception("witness %s failed", w.name)
+                log_.error("witness %s failed", w.name, exc_info=exc)
                 findings = [failure_finding(w, f"{type(exc).__name__}: {exc}")]
                 event = "witness_failed"
 
-            elapsed_ms = int((time.monotonic() - started) * 1000)
+            if elapsed_ms is None:
+                elapsed_ms = int((time.monotonic() - started) * 1000)
             for f in findings:
                 f.elapsed_ms = elapsed_ms
             statuses = ", ".join(f.status for f in findings)
