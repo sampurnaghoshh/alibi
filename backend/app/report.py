@@ -91,6 +91,8 @@ td.hash { font-size:8.5pt; color:var(--muted); padding-top:0; }
 td.hash .mono { color:var(--ink); }
 tbody.input { break-inside:avoid; }
 .summary { margin:0 0 8px; font-size:10.5pt; }
+.auth { margin:4px 0 8px; padding:6px 10px; border-left:4px solid var(--line); background:var(--soft); }
+.auth b.s-contradiction { color:var(--red); border:0; }
 .pairs { margin-top:6px; }
 .pair { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px; break-inside:avoid; }
 .pair figure { margin:0; }
@@ -421,7 +423,8 @@ def render_report(inv: Investigation, store: Optional[RunStore] = None) -> str:
     """Full HTML page. `store` (the run folder) is only used to embed artifact images."""
     a = inv.assessment
     weak = set(a.weak_indicators)
-    sentence = summarize(inv.findings, inv.claims)["sentence"]   # the same text the Live Desk shows
+    sm = summarize(inv.findings, inv.claims)                    # the same text the Live Desk shows
+    sentence, auth = sm["sentence"], sm["ai_check"]
     by_id = {f.id: f for f in inv.findings}
     ordered = sorted(inv.findings, key=lambda f: (STATUS_ORDER[f.status], RELIABILITY_ORDER[f.reliability]))
 
@@ -461,6 +464,8 @@ def render_report(inv: Investigation, store: Optional[RunStore] = None) -> str:
 <p class="no-print muted">Use your browser's Print → Save as PDF to keep a copy.</p>
 
 <h2>Assessment</h2>
+<p class="auth"><span class="muted">{e(auth["question"])}</span> <b class="{'s-contradiction' if auth['kind'] != 'none' else ''}">{e(auth["answer"])}</b><br>
+<span class="muted" style="font-size:8.5pt">{e(auth["note"])}</span></p>
 <div class="headline">{e(a.headline_text)}</div>
 {f'<p class="summary">{e(sentence)}</p>' if sentence else ""}
 <div class="pills">{pills}</div>

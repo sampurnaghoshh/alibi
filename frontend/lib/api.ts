@@ -133,3 +133,16 @@ export function getMediaUrl(investigationId: string, storedPath: string): string
     .join("/");
   return `${API_URL}/api/files/${encodeURIComponent(investigationId)}/${safePath}`;
 }
+
+/** The plain AI & manipulation answer + summary sentence (app/engine/summary.py), same text as the Live Desk. */
+export interface AiCheck { question: string; answer: string; kind: "ai_marker" | "editing" | "none"; note: string }
+export interface Summary { sentence: string; ai_check?: AiCheck }
+
+export async function getSummary(id: string): Promise<Summary | null> {
+  try {
+    const response = await apiFetch(`/api/investigations/${encodeURIComponent(id)}/summary`);
+    return response.ok ? ((await response.json()) as Summary) : null;
+  } catch {
+    return null;
+  }
+}

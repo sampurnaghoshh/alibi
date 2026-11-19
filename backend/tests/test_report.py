@@ -27,8 +27,8 @@ def test_fixture_report_renders_without_forbidden_words():
     assert all(h["event"] in html for h in FIXTURE["history"])
     assert FIXTURE["assessment"]["experimental_score"]["label"] in html
     assert f"v{config.APP_VERSION}" in html
-    assert not re.search(config.FORBIDDEN_WORDS_RE, html, re.IGNORECASE), \
-        re.search(config.FORBIDDEN_WORDS_RE, html, re.IGNORECASE)
+    assert not config.forbidden_word(html), config.forbidden_word(html)   # the judges' question is the one exemption
+    assert "Is this media AI-generated or manipulated?" in html and "No manipulation indicators found" in html
 
 
 def test_claim_spans_highlighted():

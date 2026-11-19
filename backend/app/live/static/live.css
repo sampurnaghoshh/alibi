@@ -69,6 +69,15 @@ svg.ic { width: 1.15em; height: 1.15em; flex: none; vertical-align: -0.2em; }
 .case-status.done { color: var(--text-2); }
 .case-status.failed { color: var(--contra); }
 .case-id { color: var(--text-2); font-size: 0.78em; }
+.auth { margin: var(--s1) 0 2px; padding: 6px var(--s2); border: 1px solid var(--border); border-left: 3px solid var(--inconc);
+  border-radius: 8px; background: var(--surface); animation: fade 0.35s ease-out; }
+.auth.k-ai_marker { border-left-color: var(--contra); }
+.auth.k-editing { border-left-color: var(--contra); }
+.auth-line { font-size: 1.05em; }
+.auth-q { color: var(--text-2); }
+.auth-a { font-weight: 600; color: var(--text); }
+.auth.k-ai_marker .auth-a, .auth.k-editing .auth-a { color: var(--contra); }
+.auth-ctx { font-size: 0.85em; color: var(--text-2); }
 .caption { font-size: 1.5em; font-weight: 500; line-height: 1.3; margin: var(--s1) 0 var(--s1); min-height: 1.3em; }
 .caption mark { background: none; color: inherit; text-decoration: underline; text-decoration-color: var(--accent);
   text-decoration-thickness: 2px; text-underline-offset: 6px; animation: fade 0.4s ease-out; }

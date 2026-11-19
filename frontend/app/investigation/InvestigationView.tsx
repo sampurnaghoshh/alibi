@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
+import { getSummary, type Summary } from "@/lib/api";
 import type { Investigation } from "@/lib/types";
 import { AudioWaveform, CloudRain, FileSearch, History, ScanEye, Zap, type LucideIcon } from "lucide-react";
 import EvidenceGraph from "./EvidenceGraph";
@@ -32,6 +34,11 @@ export function Problem({ title, message }: { title: string; message: string }) 
 
 /** One finished investigation, drawn from the Investigation JSON (CLAUDE.md section 4.4). */
 export default function InvestigationView({ investigation }: { investigation: Investigation }) {
+  const [summary, setSummary] = useState<Summary | null>(null);
+  useEffect(() => {
+    getSummary(investigation.id).then(setSummary);
+  }, [investigation.id]);
+  const auth = summary?.ai_check;
   const { assessment, findings, claims, inputs } = investigation;
   const priority = assessment.human_review === "priority";
 
@@ -97,6 +104,24 @@ if (lastEnd < caption.length) {
       </header>
 
       <div className="mx-auto max-w-7xl space-y-8 px-6 py-8">
+        {auth && (
+          <section
+            className={`rounded-xl border border-white/10 border-l-4 bg-[#15191D] p-5 ${
+              auth.kind === "none" ? "border-l-[#929CAA]" : "border-l-[#D96B68]"
+            }`}
+          >
+            <p className="text-xs tracking-widest text-zinc-500">AI &amp; MANIPULATION CHECK</p>
+            <p className="mt-2 text-lg">
+              <span className="text-zinc-400">{auth.question} </span>
+              <span className={`font-semibold ${auth.kind === "none" ? "text-zinc-100" : "text-[#D96B68]"}`}>
+                {auth.answer}
+              </span>
+            </p>
+            <p className="mt-1 text-sm text-zinc-400">Context: {assessment.headline_text}</p>
+            <p className="mt-2 text-xs text-zinc-500">{auth.note}</p>
+          </section>
+        )}
+
         <section>
           <p className={`mb-3 text-xs font-semibold tracking-[0.2em] ${priority ? "text-[#D96B68]" : "text-zinc-400"}`}>
            {assessment.human_review === "priority"

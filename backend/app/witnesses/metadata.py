@@ -35,6 +35,7 @@ LIMITATIONS = [
     "Metadata timestamps may reflect copying, exporting, timezone conversion, or device settings rather than the original capture time.",
     "GPS information may be missing, inaccurate, or manually altered.",
     "Capture times depend on the device clock and its time zone setting; a time stored without a time zone offset is compared cautiously.",
+    "Most AI-generated or AI-edited media carries no provenance marker, so finding none says nothing either way.",
 ]
 
 EXIFTOOL_MISSING = (
@@ -43,6 +44,19 @@ EXIFTOOL_MISSING = (
 )
 
 SOFTWARE_TAGS = ("Software", "ProcessingSoftware", "Encoder", "CreatorTool", "HistorySoftwareAgent")
+
+# AI-provenance markers (finding 4). Present -> contradiction (medium); absent -> no finding, because most
+# synthetic media carries no marker at all.
+AI_GENERATORS = {                     # lower-case search term -> display name
+    "dall-e": "DALL-E", "dall\u00b7e": "DALL-E", "dalle": "DALL-E", "chatgpt": "ChatGPT", "openai": "OpenAI",
+    "midjourney": "Midjourney", "firefly": "Adobe Firefly", "stable diffusion": "Stable Diffusion",
+    "stablediffusion": "Stable Diffusion", "sdxl": "Stable Diffusion XL", "imagen": "Google Imagen",
+    "gemini": "Google Gemini", "bing image creator": "Bing Image Creator", "designer": None,
+}
+AI_SOURCE_TYPES = ("trainedalgorithmicmedia", "compositesynthetic", "algorithmicmedia")
+# Tags where a generator name means "made by that tool" (not a caption that merely mentions it).
+GENERATOR_TAGS = ("Software", "CreatorTool", "HistorySoftwareAgent", "SoftwareAgent", "ClaimGenerator",
+                  "ClaimGeneratorName", "Generator", "Parameters", "Make", "Model", "Credit")
 MAKE_TAGS = ("Make", "CameraMake")
 MODEL_TAGS = ("Model", "CameraModelName")
 FIELD_NAMES = ("capture_time", "gps", "make", "model", "software")
@@ -463,6 +477,59 @@ def _reencode_hints(filename: str, software: list[str], make: Any, model: Any) -
     return list(dict.fromkeys(hints))
 
 
+def _generator_in(text: str) -> Optional[str]:
+    low = text.lower()
+    for term, name in AI_GENERATORS.items():
+        if name and term in low:
+            return name
+    return None
+
+
+def _ai_markers(exif: dict) -> tuple[list[dict], Optional[dict]]:
+    """(AI-generation markers, C2PA content-credentials summary or None), from exiftool -G1 tags.
+
+    - IPTC DigitalSourceType = trainedAlgorithmicMedia / compositeSynthetic / algorithmicMedia -> marker.
+    - A generator name (DALL-E, ChatGPT, Midjourney, Firefly, Stable Diffusion, Imagen, Gemini...) in a
+      software/generator tag -> marker.
+    - C2PA / JUMBF content credentials -> a marker only when their claim generator or contents name an AI
+      tool or an AI source type; cameras and editors also sign C2PA manifests, which is not AI by itself."""
+    markers: list[dict] = []
+    c2pa_keys = [k for k in exif if "c2pa" in k.lower() or "jumbf" in k.lower()
+                 or ("jumd" in k.lower() and "c2pa" in str(exif[k]).lower())]
+    for key, value in exif.items():
+        grp, _, tag = key.rpartition(":")
+        text = str(value)
+        low = text.lower().replace(" ", "")
+        if tag.lower() == "digitalsourcetype":
+            kind = next((t for t in AI_SOURCE_TYPES if t in low), None)
+            if kind:
+                markers.append({"kind": "iptc_digital_source_type", "tag": key, "value": text,
+                                "generator": None, "label": f"IPTC DigitalSourceType = {kind}"})
+            continue
+        if key in c2pa_keys:
+            continue
+        if tag in GENERATOR_TAGS or tag.lower().endswith(("generator", "softwareagent")):
+            name = _generator_in(text)
+            if name:
+                markers.append({"kind": "generator_tag", "tag": key, "value": text[:200], "generator": name,
+                                "label": f"{tag} = {text[:80]}"})
+    credentials = None
+    if c2pa_keys:
+        gen_values = [str(exif[k]) for k in c2pa_keys
+                      if any(w in k.lower() for w in ("generator", "softwareagent", "software"))]
+        joined = " ".join(str(exif[k]) for k in c2pa_keys)
+        ai_name = next((n for n in (_generator_in(v) for v in gen_values + [joined]) if n), None)
+        ai_type = next((t for t in AI_SOURCE_TYPES if t in joined.lower().replace(" ", "")), None)
+        credentials = {"present": True, "claim_generator": gen_values[0][:120] if gen_values else None,
+                       "tags": c2pa_keys[:20], "ai_generator": ai_name, "ai_source_type": ai_type}
+        if ai_name or ai_type:
+            what = ai_name or ai_type
+            markers.append({"kind": "c2pa", "tag": c2pa_keys[0], "value": credentials["claim_generator"] or what,
+                            "generator": ai_name,
+                            "label": f"C2PA content credentials, claim generator: {credentials['claim_generator'] or what}"})
+    return markers, credentials
+
+
 def _metadata_for_file(input_ref, exiftool: Optional[str]) -> dict:
     """Extract useful fields for one media file."""
     path = Path(input_ref.path)
@@ -509,6 +576,8 @@ def _metadata_for_file(input_ref, exiftool: Optional[str]) -> dict:
         "fields_present": [f for f in FIELD_NAMES if present[f]],
         "fields_missing": [f for f in FIELD_NAMES if not present[f]],
         "reencode_hints": _reencode_hints(input_ref.name, software, make, model),
+        "ai_markers": _ai_markers(exif)[0],
+        "content_credentials": _ai_markers(exif)[1],
         "exiftool": exif_result,
         "ffprobe": ffprobe_result,
     }
@@ -665,6 +734,34 @@ class MetadataWitness(Witness):
                 ],
                 limitations=limitations,
                 n=2,
+            ))
+
+        # Finding 4: AI-generation marker (C2PA / IPTC DigitalSourceType / generator tag)
+        ai = [dict(m, file=item.get("filename"), file_id=item.get("file_id"))
+              for item in extracted for m in item.get("ai_markers") or []]
+        if ai:
+            first = ai[0]
+            gens = list(dict.fromkeys(m["generator"] for m in ai if m.get("generator")))
+            findings.append(self.finding(
+                status="contradiction",
+                reliability="medium",
+                title=f"AI-generation marker found: {first['label']}",
+                summary="The file's metadata declares AI generation: "
+                        + "; ".join(f"{m['file']}: {m['label']}" for m in ai[:4]) + "."
+                        + (f" Generator: {', '.join(gens)}." if gens else ""),
+                details={"ai_markers": ai, "generators": gens, "files": files,
+                         "content_credentials": [i.get("content_credentials") for i in extracted
+                                                 if i.get("content_credentials")]},
+                evidence=evidence,
+                alternatives=[
+                    "The marker may come from a single AI-assisted edit (for example generative fill) on otherwise "
+                    "camera-captured media.",
+                    "Metadata, including provenance markers, can be copied from another file or added by hand.",
+                    "The tool named may only have been used to export or re-save the file.",
+                ],
+                limitations=limitations + [
+                    "A marker shows that a tool declared AI involvement; it does not show what was changed or how much."],
+                n=4,
             ))
 
         # Finding 3: GPS vs the claimed location

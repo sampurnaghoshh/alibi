@@ -99,6 +99,30 @@ def witness_clause(witness: str, status: str, scopes: list[str], claims: list[Cl
     }.get(witness, f"{label(witness)} is consistent with {stated}")
 
 
+AUTHENTICITY_QUESTION = "Is this media AI-generated or manipulated?"
+AUTHENTICITY_NOTE = ("Checked: AI-provenance markers (C2PA, IPTC source type, generator tags) and editing-software "
+                     "tags. Most synthetic or edited media carries no marker, so a missing marker is not proof.")
+
+
+def ai_check(findings: list[Finding]) -> dict:
+    """The plain answer judges ask for, derived only from the findings (never a verdict on the event):
+    AI-generation marker > editing traces > no manipulation indicators found."""
+    meta = [f for f in findings if f.witness == "metadata"]
+    ai = [f for f in meta if (f.details or {}).get("ai_markers")]
+    if ai:
+        gens = list(dict.fromkeys(g for f in ai for g in (f.details.get("generators") or [])))
+        what = ", ".join(gens) if gens else ai[0].details["ai_markers"][0].get("label", "metadata marker")
+        return {"question": AUTHENTICITY_QUESTION, "kind": "ai_marker",
+                "answer": f"AI-generation marker found ({what})", "note": AUTHENTICITY_NOTE}
+    edits = [f for f in meta if (f.details or {}).get("software_tags") and f.title == "Editing software tag present"]
+    if edits:
+        tools = list(dict.fromkeys(t for f in edits for t in f.details["software_tags"]))
+        return {"question": AUTHENTICITY_QUESTION, "kind": "editing",
+                "answer": f"Editing traces found ({', '.join(tools[:3])})", "note": AUTHENTICITY_NOTE}
+    return {"question": AUTHENTICITY_QUESTION, "kind": "none",
+            "answer": "No manipulation indicators found", "note": AUTHENTICITY_NOTE}
+
+
 def unavailable_witnesses() -> set[str]:
     """Witnesses this build doesn't implement (the same source /api/health reads)."""
     from app.runner import all_witnesses  # noqa: PLC0415 - imports every witness; only load when needed
@@ -130,6 +154,20 @@ def summarize(findings: list[Finding], claims: list[Claim], unavailable: Optiona
 
     parts, everything = [], caption_scopes(claims)
     for w, status, scopes in contra:
+        if w == "metadata":
+            # An AI-generation marker is about the file, not the caption's time or place: say so, and keep
+            # any date/GPS contradiction as its own clause.
+            meta = by_witness.get("metadata", [])
+            ai = [f for f in meta if f.status == "contradiction" and (f.details or {}).get("ai_markers")]
+            rest = [f for f in meta if f.status == "contradiction" and f not in ai]
+            if ai:
+                gens = list(dict.fromkeys(g for f in ai for g in (f.details.get("generators") or [])))
+                parts.append("The file's metadata carries an AI-generation marker"
+                             + (f" ({', '.join(gens)})" if gens else "") + ".")
+            if rest:
+                parts.append(witness_clause(w, status, scopes_of(rest, claims), claims) + ".")
+            if ai or rest:
+                continue
         parts.append(witness_clause(w, status, scopes, claims) + ".")
     for w, status, scopes in cons:
         others = [s for s in everything if s not in scopes]
@@ -156,4 +194,5 @@ def summarize(findings: list[Finding], claims: list[Claim], unavailable: Optiona
         "counts": {"contradiction": len(contra), "consistent": len(cons), "other": len(other),
                    "unavailable": len(unav)},
         "witnesses": rows,
+        "ai_check": ai_check(findings),
     }

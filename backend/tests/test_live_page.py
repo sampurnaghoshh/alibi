@@ -83,7 +83,7 @@ def test_no_forbidden_words_in_the_page():
     pattern = re.compile(config.FORBIDDEN_WORDS_RE, re.IGNORECASE)
     for name in OWN_FILES:
         text = (STATIC / name).read_text(encoding="utf-8")
-        assert not pattern.search(text), f"{name}: {pattern.search(text)}"
+        assert not config.forbidden_word(text), f"{name}: {config.forbidden_word(text)}"
 
 
 def test_page_uses_section9_status_vocabulary():

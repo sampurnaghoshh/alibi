@@ -803,10 +803,23 @@
   // The summary sentence and per-witness counts come from the backend (app/engine/summary.py), the same
   // function the printable report uses, so the wording can never drift. The pipeline sends them with
   // assessment_computed; runs made before that are fetched from /api/investigations/{id}/summary.
+  function showAuthenticity(a, sm) {   // "Is this media AI-generated or manipulated?" + the context headline
+    var box = $("auth");
+    var au = sm && sm.ai_check;
+    if (!au) { box.hidden = true; return; }
+    box.className = "auth k-" + au.kind;
+    box.querySelector(".auth-q").textContent = au.question + " ";
+    $("auth-a").textContent = au.answer;
+    $("auth-a").title = au.note;
+    $("auth-ctx").textContent = "Context: " + a.headline_text;
+    box.hidden = false;
+  }
+
   function showAssessment(a) {
     $("result").className = "result " + headlineClass(a.headline);
     $("headline").textContent = a.headline_text;
     var sm = current.summary;
+    showAuthenticity(a, sm);
     $("sentence").textContent = sm ? sm.sentence : "";
     var counts = $("counts");
     counts.innerHTML = "";
@@ -907,6 +920,7 @@
     $("sentence").textContent = "";
     $("counts").innerHTML = "";
     $("compare").hidden = true;
+    $("auth").hidden = true;
     $("timemachine").hidden = true;
     hideDetail();
     toggleDrawer(false);
@@ -985,7 +999,7 @@
     on("graph_ready", function () { Object.keys(current.byWitness).forEach(drawWitness); });   // idempotent re-check
     on("done", function (d) {
       setStatus("done");
-      if (!current.summary) loadSummary(current);
+      if (!current.summary || !current.summary.ai_check) loadSummary(current);   // older runs: fresh summary
       es.close();
       var parent = d.parent_id || current.parentId;
       if (parent && current.assessment) showCompare(parent, current.caption, current.assessment);

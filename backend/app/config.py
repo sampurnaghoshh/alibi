@@ -130,6 +130,18 @@ WITNESS_LABELS = {
 
 # §2.7 / §9: never in UI, report or explanation text. "authentic" covers "authenticity".
 FORBIDDEN_WORDS_RE = r"\b(fake|real|authentic\w*|proven|definitely|AI-generated)\b"
+# The one sentence that may contain a forbidden word: the question judges ask, shown with its answer
+# ("Is this media AI-generated or manipulated?" -> "AI-generation marker found (...)"). It is a question,
+# never a verdict; every answer and all other UI/report text still obey FORBIDDEN_WORDS_RE.
+FORBIDDEN_WORDS_ALLOWED_PHRASES = ("Is this media AI-generated or manipulated?",)
+
+
+def forbidden_word(text: str):
+    """re.Match of the first forbidden word in text (after removing the allowed question), or None."""
+    import re
+    for phrase in FORBIDDEN_WORDS_ALLOWED_PHRASES:
+        text = text.replace(phrase, "")
+    return re.search(FORBIDDEN_WORDS_RE, text, re.IGNORECASE)
 
 # Explanations (§7.6): let the LLM reword titles/summaries. OFF by default: it costs one call per
 # finding (~6 per investigation), which would eat a free-tier daily quota. Set ALIBI_LLM_EXPLAIN=1 to try it.

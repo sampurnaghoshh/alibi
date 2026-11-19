@@ -400,3 +400,63 @@ def test_editing_software_uses_config_list(monkeypatch, blank_file, tmp_path):
     findings = MetadataWitness().run(make_context(tmp_path, blank_file, [], mime="video/quicktime"))
     assert any(f.title == "Editing software tag present" and f.status == "inconclusive" for f in findings)
     assert MetadataWitness.label == "Metadata"
+
+
+# --- AI-provenance markers (finding 4) ---------------------------------------------------------
+
+def _tagged_jpg(path: Path, *assignments: str) -> Path:
+    Image.new("RGB", (32, 32), (90, 120, 160)).save(path, format="JPEG")
+    if assignments:
+        r = subprocess.run([shutil.which("exiftool"), "-overwrite_original", *assignments, str(path)],
+                           capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr or r.stdout
+    return path
+
+
+def _ai_finding(findings):
+    return next((f for f in findings if f.title.startswith("AI-generation marker found")), None)
+
+
+@needs_exiftool
+def test_iptc_digital_source_type_trained_algorithmic_media(tmp_path):
+    img = _tagged_jpg(tmp_path / "gen.jpg",
+                      "-XMP-iptcExt:DigitalSourceType=http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia")
+    f = _ai_finding(MetadataWitness().run(make_context(tmp_path, img, [])))
+    assert f and (f.status, f.reliability) == ("contradiction", "medium")
+    assert "IPTC DigitalSourceType = trainedalgorithmicmedia" in f.title
+    assert f.alternatives and any("no provenance marker" in l for l in f.limitations)
+
+
+@needs_exiftool
+def test_generator_software_tags_are_named(tmp_path):
+    for tag, value, name in (("-Software", "Adobe Firefly 2.1", "Adobe Firefly"),
+                             ("-XMP-xmp:CreatorTool", "Midjourney v6", "Midjourney"),
+                             ("-Software", "DALL-E 3", "DALL-E")):
+        img = _tagged_jpg(tmp_path / f"{name.split()[0]}.jpg", f"{tag}={value}")
+        f = _ai_finding(MetadataWitness().run(make_context(tmp_path, img, [])))
+        assert f and name in f.details["generators"], (tag, value)
+        assert value in f.title
+
+
+@needs_exiftool
+def test_no_marker_means_no_ai_finding(tmp_path):
+    img = _tagged_jpg(tmp_path / "plain.jpg", "-Software=Adobe Lightroom", "-Make=Apple")
+    findings = MetadataWitness().run(make_context(tmp_path, img, []))
+    assert _ai_finding(findings) is None
+    assert all(any("no provenance marker" in l for l in f.limitations) for f in findings)
+
+
+def test_c2pa_with_ai_claim_generator_is_a_marker(monkeypatch, blank_file, tmp_path):
+    fake_tools(monkeypatch, {"JUMBF:JUMDLabel": "c2pa", "JUMBF:ClaimGenerator": "ChatGPT c2pa-rs/0.33",
+                             "JUMBF:ActionsDigitalSourceType": "trainedAlgorithmicMedia"})
+    f = _ai_finding(MetadataWitness().run(make_context(tmp_path, blank_file, [])))
+    assert f and "C2PA content credentials, claim generator: ChatGPT c2pa-rs/0.33" in f.title
+    assert f.details["generators"] == ["ChatGPT"]
+
+
+def test_c2pa_from_a_camera_is_not_an_ai_marker(monkeypatch, blank_file, tmp_path):
+    fake_tools(monkeypatch, {"JUMBF:JUMDLabel": "c2pa", "JUMBF:ClaimGenerator": "Leica M11-P", "IFD0:Make": "Leica"})
+    findings = MetadataWitness().run(make_context(tmp_path, blank_file, []))
+    assert _ai_finding(findings) is None
+    inv = next(f for f in findings if f.details.get("files"))
+    assert inv.status != "contradiction"

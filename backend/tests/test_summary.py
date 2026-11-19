@@ -86,3 +86,61 @@ def test_live_desk_no_longer_builds_its_own_sentence():
     for gone in ("Recorded rainfall does not support", "other check", "function plainSentence"):
         assert gone not in js, gone
     assert "d.summary" in js and "/summary" in js
+
+
+# --- the plain authenticity answer ----------------------------------------------------------
+
+def _with_metadata(details, title):
+    def mutate(raw):
+        for f in raw["findings"]:
+            if f["id"] == "f_metadata_1":
+                f["details"] = details
+                f["title"] = title
+    return mutate
+
+
+def test_authenticity_ai_marker_beats_everything():
+    inv = _inv(_with_metadata({"ai_markers": [{"label": "Software = DALL-E 3", "generator": "DALL-E"}],
+                               "generators": ["DALL-E"]}, "AI-generation marker found: Software = DALL-E 3"))
+    au = summarize(inv.findings, inv.claims, unavailable=set())["ai_check"]
+    assert au == {"question": "Is this media AI-generated or manipulated?", "kind": "ai_marker",
+                  "answer": "AI-generation marker found (DALL-E)", "note": au["note"]}
+
+
+def test_authenticity_editing_traces():
+    inv = _inv(_with_metadata({"software_tags": ["CapCut"]}, "Editing software tag present"))
+    au = summarize(inv.findings, inv.claims, unavailable=set())["ai_check"]
+    assert (au["kind"], au["answer"]) == ("editing", "Editing traces found (CapCut)")
+
+
+def test_authenticity_none_and_never_forbidden_words():
+    import re
+    inv = _inv()
+    au = summarize(inv.findings, inv.claims, unavailable=set())["ai_check"]
+    assert (au["kind"], au["answer"]) == ("none", "No manipulation indicators found")
+    assert "not proof" in au["note"]
+    assert au["question"] in config.FORBIDDEN_WORDS_ALLOWED_PHRASES          # the one allowed question
+    for text in (au["answer"], au["note"]):
+        assert not config.forbidden_word(text)
+
+
+def test_only_the_exact_question_is_exempt():
+    assert config.forbidden_word("Is this media AI-generated or manipulated? AI-generation marker found (DALL-E)") is None
+    assert config.forbidden_word("This media is AI-generated") is not None
+    assert config.forbidden_word("authentic footage") is not None
+
+
+def test_ai_marker_gets_its_own_sentence_not_a_capture_time_one():
+    def mutate(raw):
+        for f in raw["findings"]:
+            if f["id"] == "f_metadata_1":
+                f.update(status="contradiction", reliability="medium", claim_ids=[],
+                         title="AI-generation marker found: Software = Adobe Firefly 2.1",
+                         details={"ai_markers": [{"label": "Software = Adobe Firefly 2.1", "generator": "Adobe Firefly"}],
+                                  "generators": ["Adobe Firefly"]})
+        raw["assessment"]["counts"].update({"contradiction": 3, "inconclusive": 1})
+    inv = _inv(mutate)
+    s = summarize(inv.findings, inv.claims, unavailable=set())
+    assert "The file's metadata carries an AI-generation marker (Adobe Firefly)." in s["sentence"]
+    assert "capture time" not in s["sentence"]
+    assert s["ai_check"]["answer"] == "AI-generation marker found (Adobe Firefly)"
