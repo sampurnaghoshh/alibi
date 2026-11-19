@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ALIBI Live Desk</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/live/static/live.css">
+</head>
+<body>
+
+  <!-- Idle screen: shown until a case arrives (press I to bring it back) -->
+  <section id="idle" class="idle">
+    <div class="idle-inner">
+      <div class="logo">ALIBI<span class="dot">.</span></div>
+      <p class="tagline">Every piece of media has an alibi. We check whether it holds up.</p>
+      <div class="idle-row">
+        <div id="qr" class="qr" hidden></div>
+        <div class="idle-text">
+          <p class="send">Send a clip to <span id="bot-name" class="mono">the ALIBI Telegram bot</span></p>
+          <ol class="how">
+            <li>Record 5–8 s in 1080p</li>
+            <li>📎 → <b>File</b> (not Gallery), so the date and GPS survive</li>
+            <li>Caption: place, time and what happened</li>
+          </ol>
+          <p class="idle-note">The investigation opens here as soon as it starts.</p>
+        </div>
+      </div>
+    </div>
+    <div class="conn"><span id="conn-dot" class="conn-dot"></span><span id="conn-text">connecting…</span></div>
+  </section>
+
+  <!-- Case screen -->
+  <main id="case" class="case" hidden>
+    <header class="top">
+      <div class="brand">ALIBI<span class="dot">.</span> <span class="desk">Live Desk</span></div>
+      <div id="rerun-tag" class="rerun-tag" hidden>🔁 Same file, new story</div>
+      <div class="case-meta">
+        <span id="case-status" class="case-status">investigating…</span>
+        <span id="case-id" class="mono dim"></span>
+      </div>
+    </header>
+
+    <section class="caption-panel">
+      <div class="label">Caption <span id="file-name" class="mono dim"></span></div>
+      <p id="caption" class="caption"></p>
+      <div id="claims" class="claims"></div>
+    </section>
+
+    <section class="middle">
+      <div id="tiles" class="tiles"></div>
+      <div class="graph-panel">
+        <div class="label">Evidence graph <span class="legend"><i class="lg red"></i>contradicts <i class="lg green"></i>supports <i class="lg grey"></i>inconclusive</span></div>
+        <div id="graph" class="graph"></div>
+      </div>
+    </section>
+
+    <section class="bottom">
+      <div id="result" class="result pending">
+        <div class="label">Assessment</div>
+        <div id="headline" class="headline">Waiting for the witnesses…</div>
+        <div id="counts" class="counts"></div>
+      </div>
+      <div id="compare" class="compare" hidden>
+        <div class="label">Same file, new story</div>
+        <div class="compare-cols">
+          <div class="cmp"><div class="cmp-h">Before</div><p id="cmp-old-caption" class="cmp-caption"></p><div id="cmp-old" class="cmp-headline"></div></div>
+          <div class="cmp"><div class="cmp-h">Now</div><p id="cmp-new-caption" class="cmp-caption"></p><div id="cmp-new" class="cmp-headline"></div></div>
+        </div>
+      </div>
+      <div id="timemachine" class="timemachine" hidden>
+        <div class="label">⏪ Seen before</div>
+        <div class="tm-cols">
+          <figure><img id="tm-upload" alt="Frame from the uploaded clip"><figcaption id="tm-upload-cap">Uploaded clip</figcaption></figure>
+          <figure><img id="tm-archive" alt="Matching frame from the verified archive"><figcaption id="tm-archive-cap">Verified archive</figcaption></figure>
+        </div>
+        <div id="tm-title" class="tm-title"></div>
+      </div>
+    </section>
+
+    <footer class="banner">Human review required. This is an evidence report, not a verdict.</footer>
+  </main>
+
+  <script src="/live/static/vendor/cytoscape.min.js"></script>
+  <script src="/live/static/vendor/qrcode.js"></script>
+  <script src="/live/static/live.js"></script>
+</body>
+</html>

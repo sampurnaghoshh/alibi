@@ -49,10 +49,10 @@ ALIBI treats each kind of evidence (caption text, metadata, weather records, ear
 
 | Person | AI tools | Owns | Files |
 |---|---|---|---|
-| **Sampurna** (lead) | Claude Code (Opus) in VS Code | Repo skeleton, **evidence contract**, **rule engine**, graph builder, FastAPI app, storage, report, integration, final merges, **claim extraction** + LLM client (taken over from Nooman), **weather witness**, **ELA witness** and **archive builder** (taken over from Adithi), **Live Desk** (§14) | `backend/app/live/*`, `backend/app/bot/*`, `frontend/app/live/*`, `backend/app/main.py`, `schemas.py`, `engine/*`, `storage.py`, `report.py`, `pipeline.py`, `media.py`, `uploads.py`, `demo.py`, `claims/*`, `shared/*`, `witnesses/weather.py`, `witnesses/ela.py`, `scripts/build_archive.py`, `scripts/warm_cache.py` |
+| **Sampurna** (lead) | Claude Code (Opus) in VS Code | Repo skeleton, **evidence contract**, **rule engine**, graph builder, FastAPI app, storage, report, integration, final merges, **claim extraction** + LLM client (taken over from Nooman), **weather witness**, **ELA witness** and **archive builder** (taken over from Adithi), **Live Desk** (§14) | `backend/app/live/*` (incl. the standalone page in `backend/app/live/static/`), `backend/app/bot/*`, `backend/app/main.py`, `schemas.py`, `engine/*`, `storage.py`, `report.py`, `pipeline.py`, `media.py`, `uploads.py`, `demo.py`, `claims/*`, `shared/*`, `witnesses/weather.py`, `witnesses/ela.py`, `scripts/build_archive.py`, `scripts/warm_cache.py` |
 | **Nooman** | Claude Code (Opus) in VS Code | **Lip-sync witness**, **ENF audio witness** (conditional), calibration scripts | `witnesses/lipsync.py`, `witnesses/enf.py`, `scripts/calibrate_*.py`, `scripts/test_enf.py` |
 | **Adithi** | Free LLMs | **Metadata witness**, **prior-appearance witness** | `witnesses/metadata.py`, `witnesses/prior_appearance.py` |
-| **Dhruva** | Free LLMs | **Entire frontend** except the Live Desk page: upload page, investigation dashboard, contradiction graph, witness cards, evidence drawer, report view, demo polish | `frontend/*` except `frontend/app/live/*` |
+| **Dhruva** | Free LLMs | **Entire frontend**: upload page, investigation dashboard, contradiction graph, witness cards, evidence drawer, report view, demo polish (the Live Desk page is not part of it; it lives in the backend, §14) | `frontend/*` |
 
 **Rule:** don't edit files you don't own. Need a change elsewhere? Message the owner. Contract changes (`schemas.py`, `shared/contract.schema.json`, `shared/fixtures/*`) are made **only by Sampurna** and announced in the group.
 
@@ -547,7 +547,7 @@ Stand-up every 3 hours (5 min): done / next / blocked.
 
 ## 14. Live Desk (wow layer; approved by Sampurna, owned entirely by Sampurna)
 
-A live, end-to-end show of the whole system during the pitch, built on the same pipeline, contract and rules. It is an exception to the feature freeze in §2.8, approved by the team lead. **Owner:** Sampurna. **Files:** `backend/app/live/*`, `backend/app/bot/*`, `frontend/app/live/*`. Dhruva's frontend files stay his; the Live Desk page lives only under `frontend/app/live/`.
+A live, end-to-end show of the whole system during the pitch, built on the same pipeline, contract and rules. It is an exception to the feature freeze in §2.8, approved by the team lead. **Owner:** Sampurna. **Files:** `backend/app/live/*` (the engine, and the standalone page in `backend/app/live/static/`), `backend/app/bot/*`. The Live Desk page is served by the backend at `GET /live` and does not use or touch `frontend/` (Dhruva's Next.js app), so the two never block each other.
 
 ### The flow
 1. **A judge sends a video to the ALIBI Telegram bot as a FILE** (document), with a caption. Sending it as a file matters: Telegram re-compresses videos sent as "video", which would change the original. The bot stores what it received (SHA-256, read-only, §2.6).
@@ -601,13 +601,27 @@ A live, end-to-end show of the whole system during the pitch, built on the same 
   1. A document/video/photo with a caption gets "📥 Received", then the claims, extracted locally from the caption.
   2. If Telegram compressed the media (sent as video or photo), the bot warns that the capture date/GPS was removed.
   3. Files over 20 MB get a polite request for a shorter clip.
-  4. The bot downloads the file, sends `POST ?async=true` with `posted_at` set to the message time, and edits **one** progress message from the real event stream: ✓ done, ⚠ contradiction, – not applicable, ? failed.
+  4. The bot downloads the file, sends `POST ?async=true` with `posted_at` set to the message time, and edits **one** progress message from the real event stream, with one icon per witness by status: ⚠️ contradiction, ✅ consistent, ❔ inconclusive / insufficient signal, ➖ not applicable (… still running). Files without GPS get a tip to turn on Location in the iPhone share sheet.
   5. It sends the result (headline, counts, each contradiction's title and summary, the human-review line), then `alibi_report_<id>.html`.
   6. **Replying to the result (or the report) with new text** calls `/rerun` with that caption, and the result is marked "🔁 Same file, new story: …".
 - **Access:** only chats in `TELEGRAM_ALLOWED_CHAT_IDS`, or chats approved with `/start <TELEGRAM_PASSCODE>`. Everything else is silently ignored.
 - **Safety:** one bad update never stops the loop. The token is never logged: httpx request logging is off, every log line passes through a redacting formatter, and errors are re-raised without the URL.
 - **Tests:** `tests/test_bot.py`, with Telegram and ALIBI mocked via `httpx.MockTransport`.
 
+### Step 3: Live Desk page (done): `GET /live`, files in `backend/app/live/static/`
+- **What it is:** a standalone page served by the backend, in plain HTML, CSS and vanilla JS with no build step. It doesn't use or touch `frontend/`.
+- **Works offline:** the libraries are vendored as files in `static/vendor/`, with no CDN: Cytoscape.js 3.30.2 for the graph and qrcode-generator 1.4.4 for the QR code, both MIT. Licences and SHA-256s are in `static/README.md`. A test fails if any page file loads something from the internet.
+- **Look:** a full-screen dark "investigation room" for a projector, with large type, high contrast and the §9 colours and wording.
+- **Idle screen:** the ALIBI logo, "Send a clip to @<bot>" and a QR code to `https://t.me/<bot>`, with sending instructions. The username comes from `TELEGRAM_BOT_USERNAME` (optional override) or Telegram's `getMe`, looked up in the background at API start-up and cached (`app/live/botinfo.py`, `GET /api/live/info`).
+- **Auto-open:** the page listens to `/api/live/feed`. Any new investigation (Telegram, upload, demo, re-run) opens automatically. `/live?id=inv_…` reopens a specific case; **I**/**Esc** toggles the idle screen.
+- **Live view, drawn from `/api/investigations/{id}/events` as each event arrives** (no timers or staged delays; only a short CSS fade when something appears):
+  - The caption gets its claim spans underlined on `claims_extracted`. They turn red, green or grey with the worst status pointing at them.
+  - Six witness tiles go from "queued" to "investigating…" (`witness_started`), then to their status (✅ ⚠️ ❔ ➖, §9 colours; insufficient signal is grey dashed) on `witness_completed`, in the order they actually finish.
+  - The graph (inputs | claims | witnesses) grows with each event, with red contradicts, green supports and grey dashed inconclusive edges. It's replaced by the backend's own graph on `graph_ready`.
+  - Then the headline, the count pills, and the always-visible "Human review required. This is an evidence report, not a verdict." banner.
+- **Re-run (`parent_id`):** a "🔁 Same file, new story" tag, and the old and new captions and headlines side by side.
+- **Time Machine:** if a prior_appearance finding has `details.frame_matches`, it shows the best-matching uploaded frame and archive frame side by side, with `verified_date`, `verified_location` and `verified_by`. Frame paths are run artifacts (`artifacts/...`) served from `/api/files/{id}/...`.
+- **Tests:** `tests/test_live_page.py` covers the page and its static files, no external URLs, licences, wording, a `node --check` of `live.js`, and the bot-username cache.
+
 ### Next steps
-- Step 3: Live Desk page (`frontend/app/live/`).
 - Step 4: Sarvam briefing.
