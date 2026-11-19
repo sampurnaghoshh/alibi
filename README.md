@@ -28,6 +28,32 @@ Copy-Item .env.example .env      # keep ALIBI_LLM_PROVIDER=none for the demo
 uvicorn app.main:app --reload --port 8000
 ```
 
+### Offline install (venue Wi-Fi is slow or down)
+
+A pre-downloaded set of wheels for every package in `requirements.txt` lives in `C:\Dev\wheels` on Sampurna's laptop (85 files, about 222 MB). It was built with:
+
+```powershell
+cd backend
+.\.venv\Scripts\Activate.ps1
+pip download -d C:\Dev\wheels -r requirements.txt --timeout 120 --retries 10 --resume-retries 20
+```
+
+To install on another laptop without internet:
+
+1. Copy the whole `wheels` folder to that laptop (USB stick or local file share), e.g. to `C:\Dev\wheels`.
+2. Create and activate the venv:
+   ```powershell
+   cd backend
+   py -3.12 -m venv .venv
+   .\.venv\Scripts\Activate.ps1
+   ```
+3. Install from the folder only (`--no-index` means pip never goes online):
+   ```powershell
+   pip install --no-index --find-links C:\Dev\wheels -r requirements.txt
+   ```
+
+The wheels are for **Windows 64-bit + Python 3.12** only. A different OS or Python version needs its own `pip download`. `ffmpeg` and `exiftool` are not pip packages; copy their installers separately.
+
 ### LLM: optional, and free only
 
 **Budget rule: we spend no money on APIs.** The default is `ALIBI_LLM_PROVIDER=none`, and **the demo runs with `none`**: claims come from the offline rules path (gazetteer + date rules) and explanations from templates. The LLM only ever extracts claims (and, if enabled, rewords explanations); it never decides a verdict. On any error, refusal or rate limit, ALIBI falls back to rules. No other model is ever called automatically.
