@@ -165,6 +165,7 @@ def test_file_with_caption_full_flow(world):
     assert "• Frames match a clip verified as recorded in Pune on 25 Jul 2024: 9 of 14" in final
     assert "• Recorded rainfall does not support the stated flooding: 0.0 mm" in final
     assert texts.HUMAN_REVIEW in final
+    assert "🔎 Is this media AI-generated or manipulated? No manipulation indicators found" in final
 
     doc = next(c for c in world.tg if c[0] == "sendDocument")
     assert f'filename="alibi_report_{INV}.html"'.encode() in doc[2]
@@ -237,10 +238,22 @@ def test_file_over_20_mb_is_declined_politely(world):
 
 
 @pytest.mark.parametrize("caption", [None, "", "look at this!!"])
-def test_no_claims_gets_an_example(world, caption):
+def test_no_caption_runs_the_file_only_analysis(world, caption):
     world.bot.handle_update(update(caption=caption, document=DOC))
-    assert world.sent() == [texts.RECEIVED, texts.NO_CLAIMS]
-    assert "getFile" not in world.methods() and not world.api
+    sent = world.sent()
+    assert sent[:2] == [texts.RECEIVED, texts.FILE_ONLY]
+    assert "getFile" in world.methods()
+    post = next(c for c in world.api if c[0] == "POST")
+    assert post[1] == "/api/investigations"                       # analysed anyway, file only
+    final = next(t for t in sent if t.startswith("🧾"))
+    assert "Is this media AI-generated or manipulated?" in final
+
+
+def test_reply_without_a_claim_still_asks_for_one(world):
+    world.bot.handle_update(update(caption=CASE_A, document=DOC))
+    result_msg_id = world.next_id - 1
+    world.bot.handle_update(update(mid=2, text="hmm", reply_to=result_msg_id))
+    assert world.sent()[-1] == texts.NO_CLAIMS                      # a re-run needs a new story
 
 
 # --- re-run ----------------------------------------------------------------------------------
@@ -336,4 +349,4 @@ def test_no_forbidden_words_in_bot_text(world):
     world.bot.handle_update(update(caption=CASE_A, document=DOC))
     strings += world.sent() + world.edits()
     for s in strings:
-        assert not FORBIDDEN.search(s), s
+        assert not config.forbidden_word(s), s          # the judges' question is the one exemption

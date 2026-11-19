@@ -135,12 +135,17 @@ class Bot:
             log.warning("sendMessage to %s failed: %s", chat_id, exc)
             return None
 
-    def _claims_or_example(self, chat_id: int, mid: int, caption: str, posted: datetime) -> Optional[dict]:
+    def _claims_or_example(self, chat_id: int, mid: int, caption: str, posted: datetime,
+                           file_only_ok: bool = False) -> Optional[dict]:
         """Instant feedback from the caption alone. Returns the 'Received' message (so it can be
-        edited later), or None (after sending an example) if there is nothing to check."""
+        edited later). Without a checkable claim: a new file still gets the file-only analysis
+        (file_only_ok, with an explanation); a re-run needs a caption, so None after an example."""
         received = self._say(chat_id, texts.RECEIVED, mid) or {}
         claims = extract_claims(caption, posted) if caption.strip() else []
         if not claims:
+            if file_only_ok:
+                self._say(chat_id, texts.FILE_ONLY, mid)
+                return received
             self._say(chat_id, texts.NO_CLAIMS, mid)
             return None
         self._say(chat_id, texts.claims_line(claims), mid)
@@ -157,7 +162,7 @@ class Bot:
     def _case(self, msg: dict, media: dict) -> None:
         chat_id, mid = msg["chat"]["id"], msg["message_id"]
         caption, posted = msg.get("caption") or "", self._posted_at(msg)
-        received = self._claims_or_example(chat_id, mid, caption, posted)
+        received = self._claims_or_example(chat_id, mid, caption, posted, file_only_ok=True)
         if received is None:
             return
         if media["kind"] == "video":

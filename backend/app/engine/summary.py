@@ -153,6 +153,8 @@ def summarize(findings: list[Finding], claims: list[Claim], unavailable: Optiona
         (contra if status == "contradiction" else cons if status == "consistent" else other).append(entry)
 
     parts, everything = [], caption_scopes(claims)
+    if not claims:   # caption-less (or claim-less) run: only the file itself was examined
+        parts.append("No caption to check, so only the file itself was examined.")
     for w, status, scopes in contra:
         if w == "metadata":
             # An AI-generation marker is about the file, not the caption's time or place: say so, and keep
@@ -195,4 +197,5 @@ def summarize(findings: list[Finding], claims: list[Claim], unavailable: Optiona
                    "unavailable": len(unav)},
         "witnesses": rows,
         "ai_check": ai_check(findings),
+        "caption_less": not claims,
     }

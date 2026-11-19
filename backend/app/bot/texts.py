@@ -38,6 +38,9 @@ TOO_BIG = ("📦 This file is {size} MB, and Telegram only lets bots download fi
 NO_CLAIMS = ("🤔 I couldn't find a checkable claim in that caption. Mention a place, a time and what happened, "
              "for example:\n\"Massive flooding in Chennai yesterday evening\"\n\nSend the file again with a caption "
              "like that, or reply to a result message with a new caption.")
+FILE_ONLY = ("🔎 No caption with a place or time, so I'm running the file-only checks: AI-generation markers, "
+             "editing traces, earlier appearances in our verified archive, lip-sync and error levels.\n"
+             "Place, time and weather checks need a caption, e.g. \"Flooding in Chennai yesterday evening\".")
 NEED_MEDIA = ("📎 Send a video or photo as a File with the claim in the caption, or reply to one of my result "
               "messages with a new caption to re-check that file. /help for details.")
 NOT_A_RESULT = "↩️ To re-check a file with a new story, reply to my result message for that file (the one with the headline)."
@@ -113,7 +116,16 @@ def _one_line(text: str, limit: int = 220) -> str:
 
 def final(inv: dict, rerun: bool = False) -> str:
     a = inv["assessment"]
-    lines = [("🧾 " if not rerun else RERUN_PREFIX) + a["headline_text"], counts_line(a["counts"]),
+    from app.engine.summary import ai_check  # noqa: PLC0415 - same wording as the Live Desk and report
+    from app.schemas import Investigation  # noqa: PLC0415
+    check = ai_check(Investigation.model_validate(inv).findings)
+    head = "🧾 " if not rerun else RERUN_PREFIX
+    if inv.get("claims"):
+        lines = [head + a["headline_text"], "🔎 " + check["question"] + " " + check["answer"]]
+    else:   # caption-less run: the file-only answer is the headline
+        lines = [head + check["question"] + " " + check["answer"],
+                 "No caption to check, so place, time and weather checks were skipped."]
+    lines += [counts_line(a["counts"]),
              witness_line(marks_from_findings(inv["findings"])), LEGEND]
     contradictions = [f for f in inv["findings"] if f["status"] == "contradiction"]
     if contradictions:

@@ -117,7 +117,11 @@ if (lastEnd < caption.length) {
                 {auth.answer}
               </span>
             </p>
-            <p className="mt-1 text-sm text-zinc-400">Context: {assessment.headline_text}</p>
+            <p className="mt-1 text-sm text-zinc-400">
+              {summary?.caption_less
+                ? "No caption to check, so place, time and weather checks were skipped."
+                : `Context: ${assessment.headline_text}`}
+            </p>
             <p className="mt-2 text-xs text-zinc-500">{auth.note}</p>
           </section>
         )}
@@ -133,7 +137,7 @@ if (lastEnd < caption.length) {
               INVESTIGATION ASSESSMENT
             </p>
             <h1 className="mt-3 max-w-3xl text-2xl font-semibold leading-relaxed">
-              {assessment.headline_text}
+              {summary?.caption_less && auth ? auth.answer : assessment.headline_text}
             </h1>
             <p className="mt-3 text-sm text-zinc-400">
   Human review required. This is an evidence report, not a verdict.
@@ -148,6 +152,7 @@ if (lastEnd < caption.length) {
   </p>
 
   <p className="text-lg leading-relaxed text-zinc-300">
+    {!caption && <span className="text-zinc-500">No caption: file-only analysis (AI &amp; manipulation check)</span>}
     {highlightedCaption.map((part, index) =>
       part.highlighted ? (
         <mark

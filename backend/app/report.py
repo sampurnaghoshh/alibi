@@ -466,7 +466,9 @@ def render_report(inv: Investigation, store: Optional[RunStore] = None) -> str:
 <h2>Assessment</h2>
 <p class="auth"><span class="muted">{e(auth["question"])}</span> <b class="{'s-contradiction' if auth['kind'] != 'none' else ''}">{e(auth["answer"])}</b><br>
 <span class="muted" style="font-size:8.5pt">{e(auth["note"])}</span></p>
-<div class="headline">{e(a.headline_text)}</div>
+<div class="headline">{e(auth["answer"]) if sm["caption_less"] else e(a.headline_text)}</div>
+{'<p class="muted">No caption was given, so place, time and weather checks were skipped. Rule-engine headline: '
+ + e(a.headline_text) + '</p>' if sm["caption_less"] else ''}
 {f'<p class="summary">{e(sentence)}</p>' if sentence else ""}
 <div class="pills">{pills}</div>
 <table style="width:auto;margin-top:6px">{families}

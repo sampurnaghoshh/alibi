@@ -111,3 +111,12 @@ def test_cors_allows_frontend():
         headers={"Origin": "http://localhost:3000", "Access-Control-Request-Method": "GET"},
     )
     assert r.headers.get("access-control-allow-origin") == "http://localhost:3000"
+
+
+def test_file_without_caption_runs_the_file_only_analysis():
+    r = _post(caption="")
+    assert r.status_code == 200, r.text
+    inv = r.json()
+    assert inv["caption"] == "" and inv["claims"] == [] and inv["inputs"]
+    s = client.get(f"/api/investigations/{inv['id']}/summary").json()
+    assert s["caption_less"] is True and s["ai_check"]["question"] == "Is this media AI-generated or manipulated?"

@@ -136,7 +136,7 @@ export function getMediaUrl(investigationId: string, storedPath: string): string
 
 /** The plain AI & manipulation answer + summary sentence (app/engine/summary.py), same text as the Live Desk. */
 export interface AiCheck { question: string; answer: string; kind: "ai_marker" | "editing" | "none"; note: string }
-export interface Summary { sentence: string; ai_check?: AiCheck }
+export interface Summary { sentence: string; ai_check?: AiCheck; caption_less?: boolean }
 
 export async function getSummary(id: string): Promise<Summary | null> {
   try {

@@ -783,6 +783,11 @@
   function showCaption(caption, claims) {
     var p = $("caption");
     p.innerHTML = "";
+    if (!caption) {                                      // file-only run
+      p.appendChild(el("span", "nocap", "No caption: file-only analysis"));
+      $("claims").innerHTML = "";
+      return;
+    }
     var pos = 0;
     claims.slice().sort(function (a, b) { return a.source.start - b.source.start; }).forEach(function (c) {
       if (c.source.start < pos || c.source.end > caption.length) return;   // no caption text (e.g. reopened mid-run)
@@ -811,7 +816,9 @@
     box.querySelector(".auth-q").textContent = au.question + " ";
     $("auth-a").textContent = au.answer;
     $("auth-a").title = au.note;
-    $("auth-ctx").textContent = "Context: " + a.headline_text;
+    $("auth-ctx").textContent = sm.caption_less
+      ? "No caption to check, so place, time and weather checks were skipped."
+      : "Context: " + a.headline_text;
     box.hidden = false;
   }
 
@@ -820,6 +827,10 @@
     $("headline").textContent = a.headline_text;
     var sm = current.summary;
     showAuthenticity(a, sm);
+    if (sm && sm.caption_less && sm.ai_check) {          // file-only run: the AI & manipulation answer leads
+      $("headline").textContent = sm.ai_check.answer;
+      $("result").className = "result " + (sm.ai_check.kind === "none" ? "h-grey" : "h-red");
+    }
     $("sentence").textContent = sm ? sm.sentence : "";
     var counts = $("counts");
     counts.innerHTML = "";

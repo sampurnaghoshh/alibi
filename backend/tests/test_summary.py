@@ -144,3 +144,18 @@ def test_ai_marker_gets_its_own_sentence_not_a_capture_time_one():
     assert "The file's metadata carries an AI-generation marker (Adobe Firefly)." in s["sentence"]
     assert "capture time" not in s["sentence"]
     assert s["ai_check"]["answer"] == "AI-generation marker found (Adobe Firefly)"
+
+
+
+def test_caption_less_run_says_only_the_file_was_examined():
+    def no_claims(raw):
+        raw["caption"], raw["claims"] = "", []
+        for f in raw["findings"]:
+            f["claim_ids"] = []
+        raw["graph"]["edges"] = [e for e in raw["graph"]["edges"] if not e["target"].startswith("c")]
+        raw["graph"]["nodes"] = [n for n in raw["graph"]["nodes"] if n["type"] != "claim"]
+    inv = _inv(no_claims)
+    s = summarize(inv.findings, inv.claims, unavailable=set())
+    assert s["caption_less"] is True
+    assert s["sentence"].startswith("No caption to check, so only the file itself was examined.")
+    assert s["ai_check"]["answer"] == "No manipulation indicators found"

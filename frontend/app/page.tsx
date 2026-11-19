@@ -69,8 +69,8 @@ export default function Home() {
     event.preventDefault();
     setError("");
 
-    if (!files.length || !caption.trim() || !sharedOn) {
-      setError("Add at least one file, a caption, and the date it was shared.");
+    if (!files.length || !sharedOn) {     // the caption is optional: without one, the file-only checks run
+      setError("Add at least one file and the date it was shared.");
       return;
     }
 
@@ -225,13 +225,13 @@ export default function Home() {
 
           <section>
             <label htmlFor="caption" className="mb-3 block text-sm font-medium">
-              Original caption
+              Original caption <span className="font-normal text-zinc-500">(optional)</span>
             </label>
             <textarea
               id="caption"
               value={caption}
               onChange={(event) => setCaption(event.target.value)}
-              placeholder="Paste the original post caption or claim..."
+              placeholder="Paste the original caption or claim. Leave it empty for the AI & manipulation check only."
               rows={5}
               className="w-full resize-y rounded-xl border border-white/10 bg-[#15191D] px-4 py-3 text-sm leading-6 outline-none transition placeholder:text-zinc-600 focus:border-[#83B6D1]/60"
             />
