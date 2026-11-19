@@ -473,6 +473,29 @@ Never say **fake / real / authentic / proven / definitely / AI-generated**.
 
 Visual style: dark investigation-room theme, monospace for numbers and hashes, clean cards, one accent colour per status. It should feel like a forensic tool, not a toy.
 
+### ALIBI design system (shared by the Live Desk and the frontend)
+The look is a premium forensic case file, not a generic dark dashboard: calm, editorial, never alarming. The Live Desk (`backend/app/live/static/live.css`, `:root`) is the reference implementation.
+
+| Token | Value | Use |
+|---|---|---|
+| `bg` | `#0D1012` | page background |
+| `surface` | `#15191D` | cards, panels |
+| `elevated` | `#1C2227` | hover, selected, overlays |
+| `border` | `#303840` | 1px, subtle |
+| `text` | `#E8ECEF` | primary text |
+| `text-secondary` | `#929DA7` | labels, metadata |
+| `contradiction` | `#D96B68` | contradiction (coral red) |
+| `supports` | `#69B88A` | consistent / supports (green) |
+| `inconclusive` | `#929CAA` | inconclusive; insufficient signal is the same grey, dashed |
+| `accent` | `#83B6D1` | selection, links, re-run |
+
+- **Shape and space:** 12px radius everywhere, an 8px spacing scale, 1px borders. Almost no shadows, and no glows or gradients.
+- **Type:** Inter for all text. IBM Plex Mono **only** for IDs, timestamps, hashes and numbers. Both are vendored locally, with no font CDN.
+- **Status:** a small coloured badge with an icon (Lucide: `triangle-alert`, `circle-check`, `circle-help`, `circle-minus`). Cards keep thin neutral borders; only the selected card is highlighted. Inconclusive must never look disabled.
+- **Text:** never truncate a title. Summaries may be previewed (2 lines) as long as the full text is one click away.
+- **Headline:** a small uppercase "Evidence summary" label, the headline in primary text with a thin 3px bar in its status colour, and one plain sentence from a template (no LLM). Counts are plain numbers ("01 contradiction · 01 consistent · 04 inconclusive/other").
+- **Human-review banner:** always visible, but calm: thin border, regular weight.
+
 ---
 
 ## 10. Demo plan
@@ -610,16 +633,18 @@ A live, end-to-end show of the whole system during the pitch, built on the same 
 
 ### Step 3: Live Desk page (done): `GET /live`, files in `backend/app/live/static/`
 - **What it is:** a standalone page served by the backend, in plain HTML, CSS and vanilla JS with no build step. It doesn't use or touch `frontend/`.
-- **Works offline:** the libraries are vendored as files in `static/vendor/`, with no CDN: Cytoscape.js 3.30.2 for the graph and qrcode-generator 1.4.4 for the QR code, both MIT. Licences and SHA-256s are in `static/README.md`. A test fails if any page file loads something from the internet.
-- **Look:** a full-screen dark "investigation room" for a projector, with large type, high contrast and the §9 colours and wording.
+- **Works offline:** the libraries are vendored as files in `static/vendor/`, with no CDN: Cytoscape.js 3.30.2 for the graph and qrcode-generator 1.4.4 for the QR code (both MIT), the Inter and IBM Plex Mono fonts (OFL) and Lucide icons (ISC; `vendor/lucide/icons.js` is generated from the vendored SVGs). Licences and SHA-256s are in `static/README.md`. A test fails if any page file loads something from the internet.
+- **Look:** a full-screen case file for a projector, built on the §9 design system (tokens, Inter + IBM Plex Mono, Lucide icons), with large type and the §9 colours and wording.
 - **Idle screen:** the ALIBI logo, "Send a clip to @<bot>" and a QR code to `https://t.me/<bot>`, with sending instructions. The username comes from `TELEGRAM_BOT_USERNAME` (optional override) or Telegram's `getMe`, looked up in the background at API start-up and cached (`app/live/botinfo.py`, `GET /api/live/info`).
 - **Auto-open:** the page listens to `/api/live/feed`. Any new investigation (Telegram, upload, demo, re-run) opens automatically. `/live?id=inv_…` reopens a specific case; **I**/**Esc** toggles the idle screen.
 - **Live view, drawn from `/api/investigations/{id}/events` as each event arrives** (no timers or staged delays; only a short CSS fade when something appears):
   - The caption gets its claim spans underlined on `claims_extracted`. They turn red, green or grey with the worst status pointing at them.
-  - Six witness tiles go from "queued" to "investigating…" (`witness_started`), then to their status (✅ ⚠️ ❔ ➖, §9 colours; insufficient signal is grey dashed) on `witness_completed`, in the order they actually finish.
-  - The graph (inputs | claims | witnesses) grows with each event, with red contradicts, green supports and grey dashed inconclusive edges. It's replaced by the backend's own graph on `graph_ready`.
-  - Then the headline, the count pills, and the always-visible "Human review required. This is an evidence report, not a verdict." banner.
-- **Re-run (`parent_id`):** a "🔁 Same file, new story" tag, and the old and new captions and headlines side by side.
+  - The header shows the file name and shared time on one line, the case ID small and muted, the caption, and compact claim tags (`LOCATION · DELHI`).
+  - Six witness tiles go from queued to investigating (`witness_started`, with a subtle progress bar), then on `witness_completed` to a status badge (Lucide icon + §9 label and colour; insufficient signal is grey dashed), the full title and a 2-line summary preview, in the order they actually finish.
+  - The graph has three fixed columns (Media → Claims → Witnesses) at preset positions, so it never jumps. There is **one node per witness**: its findings are merged and the most significant status wins. Edges come only from the findings' real `claim_ids` (strongest relation per claim; a finding without claims links to the media), are thin and coloured by relation, fade in, and show their label on hover. `graph_ready` redraws it the same way from the collected findings.
+  - Clicking a tile or witness node opens a detail panel with every finding of that witness: full summary, key numbers from `details`, evidence, alternatives and limitations. **Esc** closes it.
+  - Then the editorial evidence summary: the headline with a thin status bar, one plain sentence from a template (no LLM), and per-witness counts. The calm "Human review required. This is an evidence report, not a verdict." banner is always visible.
+- **Re-run (`parent_id`):** a "Same file, new story" tag, and the old and new captions and headlines side by side.
 - **Time Machine:** if a prior_appearance finding has `details.frame_matches`, it shows the best-matching uploaded frame and archive frame side by side, with `verified_date`, `verified_location` and `verified_by`. Frame paths are run artifacts (`artifacts/...`) served from `/api/files/{id}/...`.
 - **Tests:** `tests/test_live_page.py` covers the page and its static files, no external URLs, licences, wording, a `node --check` of `live.js`, and the bot-username cache.
 
