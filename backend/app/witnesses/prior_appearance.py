@@ -18,6 +18,12 @@ Is this footage already in our archive of verified clips, and does its verified 
      any disagreement -> contradiction (high); agreement -> consistent (high);
      match but nothing to compare -> inconclusive (medium); no match -> inconclusive (low);
      archive missing / empty / unreadable -> inconclusive (low). Never a crash.
+  5. Guards (other takes of the same scene also pass the frame threshold):
+       ambiguity:  the upload also matches another archive clip with a different verified date/place
+                   -> inconclusive (medium), all matches listed.
+       near-copy:  high only if the matched frames' median Hamming <= PRIOR_HIGH_MAX_MEDIAN_HAMMING (1.5);
+                   otherwise inconclusive (medium), match and rule outcome reported. Measured: true copies incl.
+                   WhatsApp-style re-encodes 0-1.0, other takes 2-8.
 
 Run alone (from backend/):
     python -m app.witnesses.prior_appearance --file ../demo/case_a/clip.mp4 --caption "Massive flooding in Chennai yesterday" --posted-at 2026-11-19
@@ -180,6 +186,28 @@ def compare_location(clip: dict, loc_claims: list[Claim]) -> dict:
             "reason": "archive entry has no coordinates and the place names differ (aliases possible)"}
 
 
+def same_context(a: dict, b: dict) -> bool:
+    """Do two archive entries describe the same verified context (date within PRIOR_DATE_TOLERANCE_DAYS and place
+    within PRIOR_LOCATION_TOLERANCE_KM, or the same place name when coordinates are missing)?"""
+    try:
+        days = abs((date.fromisoformat(a.get("verified_date", "")) - date.fromisoformat(b.get("verified_date", ""))).days)
+    except ValueError:
+        days = 0 if a.get("verified_date") == b.get("verified_date") else 10**6
+    if days > config.PRIOR_DATE_TOLERANCE_DAYS:
+        return False
+    if None not in (a.get("verified_lat"), a.get("verified_lon"), b.get("verified_lat"), b.get("verified_lon")):
+        km = _km(a["verified_lat"], a["verified_lon"], b["verified_lat"], b["verified_lon"])
+        return km <= config.PRIOR_LOCATION_TOLERANCE_KM
+    return str(a.get("verified_location", "")).strip().lower() == str(b.get("verified_location", "")).strip().lower()
+
+
+def match_row(r: dict) -> dict:
+    c = r["clip"]
+    return {"clip_id": c["clip_id"], "title": c.get("title"), "verified_date": c.get("verified_date"),
+            "verified_location": c.get("verified_location"), "matched_frames": len(r["dists"]),
+            "median_hamming": statistics.median(r["dists"]) if r["dists"] else None}
+
+
 def _fmt_date(iso: str) -> str:
     try:
         return date.fromisoformat(iso).strftime("%d %b %Y").lstrip("0")
@@ -276,7 +304,8 @@ class PriorAppearanceWitness(Witness):
             )
 
         clip = best["clip"]
-        others = [{"clip_id": r["clip"]["clip_id"], "matched_frames": len(r["dists"])} for r in rows[1:] if r["is_match"]]
+        matching = [r for r in rows if r["is_match"]]
+        others = [match_row(r) for r in matching[1:]]
         details.update({
             "matched_clip": {k: clip.get(k) for k in ("clip_id", "title", "verified_date", "verified_location",
                                                       "verified_lat", "verified_lon", "verified_by", "source_note")},
@@ -299,6 +328,52 @@ class PriorAppearanceWitness(Witness):
                      f"(Hamming {min(best['dists'])}-{max(best['dists'])}, threshold {thr})")
         compared = [c for c in (date_cmp, loc_cmp) if c["result"] != "not_compared"]
         claim_ids = sorted({c["claim_id"] for c in compared if c.get("claim_id")})
+
+        # Guard 1, ambiguity: the upload also matches another archive clip with a different verified date or place
+        # (e.g. two takes of the same scene). Which verified record applies is then unclear -> no conclusion.
+        conflicting = [r for r in matching[1:] if not same_context(clip, r["clip"])]
+        # Guard 2, near-duplicate gate: a high-reliability conclusion needs a near-identical copy. Re-filmed takes of
+        # the same scene also pass the frame threshold, but at a larger median distance.
+        median_h = statistics.median(best["dists"])
+        near_duplicate = median_h <= config.PRIOR_HIGH_MAX_MEDIAN_HAMMING
+        would_be = ("contradiction" if any(c["result"] == "disagree" for c in compared)
+                    else "consistent" if compared else "inconclusive")
+        details["guards"] = {
+            "ambiguous": bool(conflicting),
+            "conflicting_clip_ids": [r["clip"]["clip_id"] for r in conflicting],
+            "matched_median_hamming": median_h,
+            "high_max_median_hamming": config.PRIOR_HIGH_MAX_MEDIAN_HAMMING,
+            "near_duplicate": near_duplicate,
+            "rule_status": would_be,
+        }
+        if conflicting:
+            all_rows = [match_row(r) for r in matching]
+            listing = "; ".join(f"{m['clip_id']} ({m['verified_location']}, {_fmt_date(m['verified_date'] or '')}: "
+                                f"{m['matched_frames']} frames, median Hamming {m['median_hamming']:g})" for m in all_rows)
+            return self.finding(
+                n=n, status="inconclusive", reliability="medium", claim_ids=claim_ids, details=details,
+                evidence=[{"kind": "archive_match", "ref": m["clip_id"],
+                           "label": f"{m['title'] or m['clip_id']} (verified {m['verified_location']}, {m['verified_date']})"}
+                          for m in all_rows] + [{"kind": "input", "ref": inp.file_id, "label": inp.name}],
+                locations=locations,
+                title=f"Frames match {len(all_rows)} archive clips with different verified contexts{where}",
+                summary=f"The upload matches several archived clips whose verified dates or places differ: {listing}. "
+                        "It is not clear which verified record applies, so no conclusion is drawn.",
+                alternatives=ALTERNATIVES + ["Several archived clips may show the same place filmed at different times"],
+                limitations=limitations + ["Matches to several verified clips with different contexts are not "
+                                           "resolved automatically"],
+            )
+        if compared and not near_duplicate:
+            return self.finding(
+                n=n, status="inconclusive", reliability="medium", claim_ids=claim_ids, details=details,
+                evidence=evidence, locations=locations,
+                title=f"Frames resemble a clip verified as recorded in {place} on {when}{where}",
+                summary=f"{match_txt}, but the median distance ({median_h:g}) is above the near-copy limit "
+                        f"({config.PRIOR_HIGH_MAX_MEDIAN_HAMMING}), so this may be a similar scene rather than the same "
+                        f"footage. The comparison with the caption ({would_be}) is reported in details only.",
+                alternatives=ALTERNATIVES,
+                limitations=limitations + ["Only near-identical copies can support a high-reliability conclusion"],
+            )
 
         if any(c["result"] == "disagree" for c in compared):
             diffs = []

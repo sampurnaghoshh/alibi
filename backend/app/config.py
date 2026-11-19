@@ -283,6 +283,11 @@ PRIOR_DATE_TOLERANCE_DAYS = 2        # verified_date outside the claimed time wi
 PRIOR_LOCATION_TOLERANCE_KM = 50.0   # verified lat/lon > 50 km from the claimed lat/lon -> disagrees. Entries without
                                      # coordinates: a place-name match can agree, a mismatch is never a contradiction
 PRIOR_MAX_INPUTS = 2                 # check at most 2 images/videos per investigation (speed)
+PRIOR_HIGH_MAX_MEDIAN_HAMMING = 1.5  # consistent/contradiction (high) only if the matched frames' median Hamming <= this
+                                     # (near-identical copy); else inconclusive / medium. Measured 2026-11-19 on 10 close-up
+                                     # takes (4K original archived): true copies (1080p, WhatsApp-style 848/640 px CRF 28)
+                                     # median 0-1.0; OTHER takes of the same scene that pass the frame rule median 2-8
+                                     # (13 pairs at 2). 1.5 = widest margin; the gap is clean but only 1 bit wide.
 
 
 # =============================================================================

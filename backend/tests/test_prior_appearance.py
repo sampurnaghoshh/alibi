@@ -210,3 +210,69 @@ def test_unreadable_upload_is_inconclusive_not_a_crash(tmp_path, archive):
 def test_matched_spans_merge_consecutive_samples():
     assert P.matched_spans([0, 1, 2, 3, 4, 5], [0, 1, 3, 4], 1.0, 5.5) == [(0, 2), (3, 5)]
     assert P.matched_spans([0, 1, 2], [2], 1.0, 2.4) == [(2, 2.4)]
+
+
+# --- guards: ambiguity + near-duplicate gate -------------------------------------------
+
+def _build_two(tmp_path, make_video, monkeypatch, second: dict, second_seeds=ARCHIVE_SEEDS):
+    """Archive with clip_001 (Chennai, 2026-11-18) and clip_002 (same/other scenes, given context)."""
+    d = tmp_path / "archive2"
+    d.mkdir()
+    _video(make_video, d / "a.mp4", ARCHIVE_SEEDS)
+    _video(make_video, d / "b.mp4", second_seeds)
+    base = {"title": "Street", "verified_by": "Team member", "source_note": "Own recording"}
+    entries = [{"clip_id": "clip_001", "file": "a.mp4", "verified_date": "2026-11-18", **CHENNAI, **base},
+               {"clip_id": "clip_002", "file": "b.mp4", **base, **second}]
+    (d / "manifest.json").write_text(json.dumps(entries), encoding="utf-8")
+    out = tmp_path / "archive2.json"
+    assert build_archive.main(["--manifest", str(d / "manifest.json"), "--out", str(out)]) == 0
+    monkeypatch.setattr(config, "ARCHIVE_JSON", out)
+
+
+def test_ambiguous_match_with_different_context_is_inconclusive_medium(tmp_path, make_video, monkeypatch, upload):
+    _build_two(tmp_path, make_video, monkeypatch, {"verified_date": "2024-07-25", **PUNE})
+    f = _run(tmp_path, upload, "Massive flooding in Chennai yesterday evening")
+    assert (f.status, f.reliability) == ("inconclusive", "medium")
+    assert f.details["guards"]["ambiguous"] is True
+    assert {e.ref for e in f.evidence if e.kind == "archive_match"} == {"clip_001", "clip_002"}
+    assert "clip_001" in f.summary and "clip_002" in f.summary
+
+
+def test_second_match_with_same_context_is_not_ambiguous(tmp_path, make_video, monkeypatch, upload):
+    _build_two(tmp_path, make_video, monkeypatch, {"verified_date": "2026-11-17", **CHENNAI})  # within +/- 2 days
+    f = _run(tmp_path, upload, "Massive flooding in Chennai yesterday evening")
+    assert (f.status, f.reliability) == ("consistent", "high")
+    assert f.details["guards"]["ambiguous"] is False
+
+
+def test_non_matching_second_clip_does_not_trigger_ambiguity(tmp_path, make_video, monkeypatch, upload):
+    _build_two(tmp_path, make_video, monkeypatch, {"verified_date": "2024-07-25", **PUNE}, second_seeds=[70, 71, 72, 73])
+    f = _run(tmp_path, upload, "Massive flooding in Chennai yesterday evening")
+    assert (f.status, f.reliability) == ("consistent", "high")
+
+
+def test_near_duplicate_gate_blocks_high_for_a_looser_match(tmp_path, archive, upload, monkeypatch):
+    archive(verified_date="2024-07-25")                       # would be a contradiction
+    monkeypatch.setattr(config, "PRIOR_HIGH_MAX_MEDIAN_HAMMING", -1)   # nothing counts as a near-identical copy
+    f = _run(tmp_path, upload, "Massive flooding in Chennai yesterday evening")
+    assert (f.status, f.reliability) == ("inconclusive", "medium")
+    g = f.details["guards"]
+    assert g["near_duplicate"] is False and g["rule_status"] == "contradiction"
+    assert f.title.startswith("Frames resemble a clip verified as recorded in Chennai")
+    assert f.evidence[0].kind == "archive_match" and f.locations       # the match is still reported
+
+
+def test_refilmed_scene_passes_frame_threshold_but_not_the_gate(tmp_path, archive, make_video):
+    """A 're-filmed' take: same scenes, slightly brighter and shifted. Frames still match (<= 8) but the
+    median distance (6 here) is above the configured near-copy gate, so no high-reliability contradiction."""
+    archive(verified_date="2024-07-25")
+
+    def refilm(seed):
+        img = _scene(seed).astype(np.int16)
+        return np.clip(np.roll(img, 6, axis=1) + 18, 0, 255).astype(np.uint8)[:, :, ::-1].copy()
+    scenes = [refilm(s) for s in ARCHIVE_SEEDS]
+    take2 = make_video(tmp_path / "take2.mp4", seconds=6, fps=FPS, size=(W, H), frame_fn=lambda i: scenes[i // FPS])
+    f = _run(tmp_path, take2, "Massive flooding in Chennai yesterday evening")
+    assert f.details["matched_frames"] >= config.PRIOR_MIN_MATCHED_FRAMES     # it IS a frame-level match ...
+    assert f.details["guards"]["rule_status"] == "contradiction"              # ... the rule alone would accuse ...
+    assert (f.status, f.reliability) == ("inconclusive", "medium")           # ... but the gate stops it
