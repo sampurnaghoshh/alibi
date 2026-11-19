@@ -177,17 +177,54 @@ LLM_EFFORT = "low"                   # Anthropic effort: short extraction/reword
 # --- Nooman: lipsync + enf ---
 # =============================================================================
 
-# Lip-sync synchrony indicator (§6.5). Calibrate on >= 5 genuine phone clips.
-LIPSYNC_MIN_FACE_FRACTION = 0.50     # face detected in >= 50% of sampled frames
+# Lip-sync synchrony indicator (§6.5). Calibrate on >= 5 genuine phone clips + swapped-audio controls
+# (scripts/calibrate_lipsync.py). ONE lag per clip from all speech frames; 3 s windows only show where sync drops.
+LIPSYNC_FACE_MODEL = DATA_DIR / "models" / "face_landmarker.task"   # MediaPipe Tasks model, see data/models/README.md
+LIPSYNC_MOUTH_FEATURE = "velocity"   # "aperture" | "velocity" (|d aperture / frame|). Calibrated 2026-11-19 on
+                                     # 5 genuine iPhone clips + 5 audio-swapped controls: velocity corr overlapped
+                                     # least (genuine min 0.115 vs swapped max 0.147); aperture overlapped more.
+# FALLBACK (§6.5), calibrated 2026-11-19: no metric (corr, prominence, |lag|; either feature) separated genuine
+# from swapped clips cleanly, so every lip-sync finding is capped at LOW reliability: it can only ever be a
+# weak indicator, never set the signal family or the headline.
+LIPSYNC_MAX_RELIABILITY = "low"
+# Genuine/swapped didn't separate in calibration on 5+5 clips, so pending Sampurna's decision. While False,
+# lip-sync is ALWAYS inconclusive (low) until recalibration: any rule result (contradiction OR consistent) is
+# reported as inconclusive, with the raw lag/corr/prominence and the rule outcome in details.
+LIPSYNC_ALLOW_CONTRADICTION = False
+LIPSYNC_MIN_FACE_HEIGHT = 0.25       # STARTING VALUE: median face height (forehead-chin) / frame height below
+                                     # this -> inconclusive/low "face too small for a reliable synchrony measurement"
+LIPSYNC_MAX_INPUTS = 2               # analyse at most 2 videos per investigation (runner limit is 90 s; ~10-35 s each)
+LIPSYNC_MAX_LOCATIONS = 3            # worst windows (lowest corr at the clip lag) reported as timestamps
+LIPSYNC_MIN_FACE_FRACTION = 0.50     # face detected in >= 50% of sampled frames, else not_applicable
 LIPSYNC_SMOOTH_FRAMES = 3            # median filter on mouth aperture
+LIPSYNC_MAX_GAP_FRAMES = 5           # interpolate face dropouts up to 5 frames; longer stay missing
+LIPSYNC_ANALYSIS_FPS = 30.0          # constant analysis rate (iPhone ~29.83 fps VFR); +/-0.3 s = +/-9 frames
+LIPSYNC_FRAME_MAX_SIDE = 960         # downscale 4K before landmarking (1920 tested: same numbers, slower)
+LIPSYNC_MAX_LAG_S = 0.30             # clip-level cross-correlation search range +/-
+LIPSYNC_MIN_SPEECH_S = 2.0           # need >= 2 s of speech frames with a face, else insufficient_signal
+# Audio: speech-band loudness in dB.
+LIPSYNC_AUDIO_SR = 16000
+LIPSYNC_BAND_HZ = (300.0, 3000.0)    # band-pass before RMS (drops hum, rumble and hiss)
+LIPSYNC_RMS_HOP_S = 0.010            # loudness at 100 Hz, then interpolated onto video frame times
+LIPSYNC_RMS_FRAME_S = 0.040
+LIPSYNC_DB_FLOOR = -90.0             # dB floor for digital silence
+LIPSYNC_SPEECH_FLOOR_PCT = 10        # adaptive speech mask (dB): noise floor = 10th percentile ...
+LIPSYNC_SPEECH_PEAK_PCT = 95         # ... peak = 95th percentile ...
+LIPSYNC_SPEECH_THRESH_FRAC = 0.50    # ... speech if dB > floor + 0.50 * (peak - floor)
+LIPSYNC_SPEECH_MIN_RANGE_DB = 6.0    # peak - floor < 6 dB -> no speech anywhere (flat audio)
+# Display windows.
 LIPSYNC_WINDOW_S = 3.0
 LIPSYNC_STEP_S = 1.0
-LIPSYNC_MAX_LAG_S = 0.5              # cross-correlation search range +/-
-LIPSYNC_CONSISTENT_MAX_LAG_S = 0.12  # median |lag| <= this ...
-LIPSYNC_CONSISTENT_MIN_CORR = 0.30   # ... and median corr >= this -> consistent
-LIPSYNC_CONTRA_MIN_LAG_S = 0.25      # median |lag| >= this ...
-LIPSYNC_CONTRA_MAX_CORR = 0.10       # ... or median corr < this -> contradiction
+LIPSYNC_WINDOW_MIN_SPEECH = 0.30     # a window is a "speech window" if >= 30% of its frames are speech
+LIPSYNC_WINDOW_MIN_FACE = 0.80       # ... and the face was found in >= 80% of its frames
 LIPSYNC_MIN_SPEECH_FRACTION = 0.50   # contradiction needs speech in >= 50% of windows
+# Status thresholds on the clip-level numbers. STARTING VALUES (§6.5), prominence = best corr - median corr over lags.
+LIPSYNC_CONSISTENT_MAX_LAG_S = 0.12  # |lag| <= this ...
+LIPSYNC_CONSISTENT_MIN_CORR = 0.30   # ... and corr >= this ...
+LIPSYNC_CONSISTENT_MIN_PROMINENCE = 0.0   # ... and prominence >= this -> consistent (placeholder until calibrated)
+LIPSYNC_CONTRA_MIN_LAG_S = 0.25      # |lag| >= this ...
+LIPSYNC_CONTRA_MAX_CORR = 0.10       # ... or corr < this ...
+LIPSYNC_CONTRA_MAX_PROMINENCE = -1.0 # ... or prominence < this -> contradiction (placeholder: off until calibrated)
 
 # ENF power-grid hum (§6.6). Conditional on the hour-1 go/no-go test.
 ENF_GO = False                       # set True ONLY if 50/100 Hz was found in >= 3 of 5 venue clips
