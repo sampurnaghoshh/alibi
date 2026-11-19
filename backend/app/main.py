@@ -75,6 +75,7 @@ def _get(inv_id: str) -> Investigation:
 @app.post("/api/investigations", response_model=Investigation)
 def create_investigation(   # sync on purpose: FastAPI runs it in a worker thread
     files: Optional[list[UploadFile]] = File(default=None),   # FormData.append("files", file) per file
+    files_brackets: Optional[list[UploadFile]] = File(default=None, alias="files[]"),   # PHP-style name, same thing
     caption: str = Form(default=""),
     posted_at: Optional[str] = Form(default=None),            # "2026-11-19" or ISO datetime; default now
     run_async: bool = Query(default=False, alias="async"),    # ?async=true -> 202 + id, runs in background
@@ -83,7 +84,8 @@ def create_investigation(   # sync on purpose: FastAPI runs it in a worker threa
         posted = parse_posted_at(posted_at)
     except ValueError:
         raise HTTPException(422, "The 'Shared on' date must be a date like 2026-11-19.")
-    files = files or []
+    # Both "files" and "files[]" are accepted, so a client using either name never loses its files.
+    files = (files or []) + (files_brackets or [])
     if not files and not caption.strip():
         raise HTTPException(422, "Add at least one file or a caption to investigate.")
 

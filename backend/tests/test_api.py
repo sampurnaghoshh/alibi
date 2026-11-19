@@ -35,6 +35,14 @@ def _post(caption="Flooding in Chennai yesterday", posted_at="2026-11-19", files
     return client.post("/api/investigations", data={"caption": caption, "posted_at": posted_at}, files=files)
 
 
+def test_bracket_field_name_files_is_not_dropped():
+    """FormData.append("files[]", f) (as the frontend sends it) must store the file, not run caption-only."""
+    png = _png()
+    r = _post(files=[("files[]", ("a.png", png, "image/png")), ("files", ("b.png", _png(), "image/png"))])
+    assert r.status_code == 200, r.text
+    assert sorted(i["name"] for i in r.json()["inputs"]) == ["a.png", "b.png"]
+
+
 def test_end_to_end_with_stubs():
     png = _png()
     r = _post(files=[("files", ("tiny.png", png, "image/png"))])

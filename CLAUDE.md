@@ -395,7 +395,7 @@ alibi/
 ### API
 | Method | Route | Purpose |
 |---|---|---|
-| POST | `/api/investigations` | multipart: `files[]`, `caption`, `posted_at` → runs synchronously, returns `Investigation` |
+| POST | `/api/investigations` | multipart: one `files` part per file (`files[]` is accepted too), `caption`, `posted_at` → runs synchronously, returns `Investigation` |
 | GET | `/api/investigations/{id}` | fetch a saved investigation |
 | GET | `/api/fixture` | the Case A sample investigation (`shared/fixtures/sample_investigation.json`) for frontend work |
 | GET | `/api/demo` | preset cases from `demo/captions.md` (for the Case A / Case B buttons) |
