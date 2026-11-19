@@ -5,7 +5,8 @@ POST /api/investigations runs the real pipeline (app/pipeline.py) and saves the 
 Uploads are validated first (app/uploads.py): max 5 files, 200 MB each, real image/video/audio content.
 GET /api/demo + POST /api/demo/{case} run the presets in demo/captions.md (no file picking).
 GET /api/fixture serves the Case A sample investigation for frontend work.
-Live Desk (§14): ?async=true, GET .../events (SSE), POST .../rerun, GET /api/live/feed (SSE).
+Live Desk (§14): ?async=true, GET .../events (SSE), POST .../rerun, GET /api/live/feed (SSE),
+GET /live (the standalone big-screen page) + /live/static/*, GET /api/live/info.
 
 Run (from backend/):  uvicorn app.main:app --reload --port 8000   (one worker: the live feed is in-process)
 """
@@ -14,15 +15,18 @@ from __future__ import annotations
 
 import logging
 import shutil
+from contextlib import asynccontextmanager
 from typing import Any, Callable, Optional
 
 from fastapi import Body, FastAPI, File, Form, Header, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ValidationError
 
 from app import config
 from app.demo import load_cases
+from app.live import botinfo
 from app.live import events as live_events
 from app.live import feed as live_feed
 from app.live import jobs
@@ -36,7 +40,14 @@ from app.uploads import UploadError, check_count, validate_upload
 
 log = logging.getLogger("alibi.api")
 
-app = FastAPI(title="ALIBI", description="Explainable multimedia verification", version=config.APP_VERSION)
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    botinfo.warm_up()          # look up the bot's @username in the background (Live Desk idle screen)
+    yield
+
+
+app = FastAPI(title="ALIBI", description="Explainable multimedia verification", version=config.APP_VERSION,
+              lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -216,6 +227,23 @@ def rerun_investigation(inv_id: str, body: RerunRequest = Body(...),
         return execute(p)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(500, f"The re-run could not be completed: {type(exc).__name__}: {exc}")
+
+
+@app.get("/live", response_class=FileResponse, include_in_schema=False)
+def live_desk_page() -> FileResponse:
+    """The Live Desk big-screen page (§14 step 3): plain HTML/CSS/JS, works offline."""
+    return FileResponse(config.LIVE_STATIC_DIR / "index.html", media_type="text/html",
+                        headers={"Cache-Control": "no-cache"})
+
+
+app.mount("/live/static", StaticFiles(directory=config.LIVE_STATIC_DIR), name="live-static")
+
+
+@app.get("/api/live/info")
+def live_info() -> dict[str, Any]:
+    """What the Live Desk idle screen needs: the bot's @username and t.me link (both null if unknown)."""
+    name = botinfo.bot_username()
+    return {"bot_username": name, "bot_url": f"https://t.me/{name}" if name else None}
 
 
 @app.get("/api/live/feed")

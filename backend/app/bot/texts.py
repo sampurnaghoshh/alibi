@@ -19,12 +19,16 @@ HELP = (
     "2. Tap 📎 → File (not Gallery/Video) and pick the clip. A normal video upload makes Telegram "
     "remove the capture date and GPS.\n"
     "3. Put the claim in the caption, e.g. \"Heavy rain in Bengaluru this afternoon\".\n\n"
+    "📍 Tip: iPhone: in the share sheet tap Options → turn on Location before sending, so the file keeps its "
+    "GPS location and the place can be checked.\n\n"
     "You get the claims at once, live progress, then the result and a printable report.\n"
     "To re-check the same file with a different story, reply to the result message with the new caption.\n\n"
     + HUMAN_REVIEW
 )
 
 RECEIVED = "📥 Received. Extracting claims…"
+GPS_TIP = ("📍 No GPS location found in this file, so the place can't be checked against it.\n"
+           "iPhone: in the share sheet tap Options → turn on Location before sending.")
 COMPRESSED_VIDEO = ("⚠️ Sent as video, so Telegram removed the capture date/GPS. Metadata will be inconclusive. "
                     "Send as a File for the full check.")
 COMPRESSED_PHOTO = ("⚠️ Sent as photo, so Telegram removed the capture date/GPS. Metadata will be inconclusive. "
@@ -61,19 +65,40 @@ def claims_line(claims: list[Any]) -> str:
     return "🔎 Claims found: " + " · ".join(parts)
 
 
+ICON_CONTRADICTION, ICON_CONSISTENT, ICON_INCONCLUSIVE, ICON_NOT_APPLICABLE, ICON_PENDING = "⚠️", "✅", "❔", "➖", "…"
+LEGEND = "⚠️ contradiction · ✅ consistent · ❔ inconclusive · ➖ not applicable"
+
+
 def progress(state: dict[str, str], done: bool = False) -> str:
-    """state: witness -> '…' (running) | '✓' (done) | '⚠' (contradiction) | '–' (not applicable) | '?' (failed)."""
+    """state: witness -> icon (see mark()); witnesses not finished yet show '…'."""
     head = "🔍 Analysis complete: " if done else "🔍 Checking: "
-    return head + " · ".join(f"{label} {state.get(name, '…')}" for name, label in WITNESS_LABELS)
+    return head + witness_line(state)
+
+
+def witness_line(state: dict[str, str]) -> str:
+    return " · ".join(f"{label} {state.get(name, ICON_PENDING)}" for name, label in WITNESS_LABELS)
 
 
 def mark(findings: list[dict]) -> str:
+    """One icon per witness, by STATUS. With several findings the most significant wins:
+    contradiction > consistent > inconclusive / insufficient signal > not applicable."""
     statuses = {f.get("status") for f in findings}
     if "contradiction" in statuses:
-        return "⚠"
+        return ICON_CONTRADICTION
+    if "consistent" in statuses:
+        return ICON_CONSISTENT
+    if statuses & {"inconclusive", "insufficient_signal"}:
+        return ICON_INCONCLUSIVE
     if statuses == {"not_applicable"}:
-        return "–"
-    return "✓"
+        return ICON_NOT_APPLICABLE
+    return ICON_INCONCLUSIVE        # empty / unknown: nothing to report either way
+
+
+def marks_from_findings(findings: list[dict]) -> dict[str, str]:
+    by_witness: dict[str, list[dict]] = {}
+    for f in findings:
+        by_witness.setdefault(f["witness"], []).append(f)
+    return {w: mark(fs) for w, fs in by_witness.items()}
 
 
 def counts_line(counts: dict[str, int]) -> str:
@@ -88,7 +113,8 @@ def _one_line(text: str, limit: int = 220) -> str:
 
 def final(inv: dict, rerun: bool = False) -> str:
     a = inv["assessment"]
-    lines = [("🧾 " if not rerun else RERUN_PREFIX) + a["headline_text"], counts_line(a["counts"])]
+    lines = [("🧾 " if not rerun else RERUN_PREFIX) + a["headline_text"], counts_line(a["counts"]),
+             witness_line(marks_from_findings(inv["findings"])), LEGEND]
     contradictions = [f for f in inv["findings"] if f["status"] == "contradiction"]
     if contradictions:
         lines.append("")

@@ -68,6 +68,11 @@ BOT_STATE_FILE = DATA_DIR / "bot_chats.json"       # approved chats + which mess
 # 127.0.0.1 rather than "localhost": on Windows, "localhost" tries IPv6 ::1 first and every new
 # connection to uvicorn (which listens on 127.0.0.1) waits ~2 s before falling back.
 ALIBI_API_URL = os.getenv("ALIBI_API_URL", "http://127.0.0.1:8000").rstrip("/")
+# Optional: the bot's @username for the Live Desk idle screen. Empty = ask Telegram (getMe) once and cache it.
+TELEGRAM_BOT_USERNAME = os.getenv("TELEGRAM_BOT_USERNAME", "").strip().lstrip("@")
+
+# Live Desk page (§14 step 3): standalone HTML/CSS/JS served at GET /live, libraries vendored (offline).
+LIVE_STATIC_DIR = BACKEND_DIR / "app" / "live" / "static"
 
 # Demo presets (POST /api/demo/{case}): cases are read from this file; file paths in it are
 # relative to the repo root and must stay inside demo/.
@@ -208,16 +213,26 @@ LIPSYNC_MAX_RELIABILITY = "low"
 # Genuine/swapped didn't separate in calibration on 5+5 clips, so pending Sampurna's decision. While False,
 # lip-sync is ALWAYS inconclusive (low) until recalibration: any rule result (contradiction OR consistent) is
 # reported as inconclusive, with the raw lag/corr/prominence and the rule outcome in details.
+# Recalibration 2026-11-19 (1080p close-ups, faceH 28-38%; 5 calibration + 5 held-out test clips, 5 swaps each,
+# scripts/calibrate_lipsync_thresholds.py): velocity corr < 0.1485 / prominence < 0.0945 was 0 genuine / 3 of 5
+# swaps on calibration but FAILED the held-out test (1 genuine contradiction). Aperture prominence < 0.12 held
+# (0 genuine on both sets) but caught only 1 of 5 swaps on each. |lag| unusable (genuine reached the 0.3 s edge).
+# Decision: flag stays False, reliability stays capped at low, no threshold changes.
 LIPSYNC_ALLOW_CONTRADICTION = False
 LIPSYNC_MIN_FACE_HEIGHT = 0.25       # STARTING VALUE: median face height (forehead-chin) / frame height below
                                      # this -> inconclusive/low "face too small for a reliable synchrony measurement"
+LIPSYNC_FACE_PROBE_S = 3.0           # early exit: no face in any frame of the first 3 s -> stop decoding,
+                                     # not_applicable "no face detected in the opening seconds" (live-demo speed)
+LIPSYNC_MAX_SPAN_S = 12.0            # analyse only the first 12 s (video + audio); measured ~9 s on 4K IMG_5383.
+                                     # A limitation is added whenever this actually cuts the clip. 0/None = whole clip
 LIPSYNC_MAX_INPUTS = 2               # analyse at most 2 videos per investigation (runner limit is 90 s; ~10-35 s each)
 LIPSYNC_MAX_LOCATIONS = 3            # worst windows (lowest corr at the clip lag) reported as timestamps
 LIPSYNC_MIN_FACE_FRACTION = 0.50     # face detected in >= 50% of sampled frames, else not_applicable
 LIPSYNC_SMOOTH_FRAMES = 3            # median filter on mouth aperture
 LIPSYNC_MAX_GAP_FRAMES = 5           # interpolate face dropouts up to 5 frames; longer stay missing
 LIPSYNC_ANALYSIS_FPS = 30.0          # constant analysis rate (iPhone ~29.83 fps VFR); +/-0.3 s = +/-9 frames
-LIPSYNC_FRAME_MAX_SIDE = 960         # downscale 4K before landmarking (1920 tested: same numbers, slower)
+LIPSYNC_FRAME_WIDTH = 640            # ffmpeg scales to 640 px wide while decoding (scale=640:-2, never upscaled);
+                                     # 960 and 1920 gave the same numbers, only slower
 LIPSYNC_MAX_LAG_S = 0.30             # clip-level cross-correlation search range +/-
 LIPSYNC_MIN_SPEECH_S = 2.0           # need >= 2 s of speech frames with a face, else insufficient_signal
 # Audio: speech-band loudness in dB.
@@ -245,7 +260,9 @@ LIPSYNC_CONTRA_MAX_CORR = 0.10       # ... or corr < this ...
 LIPSYNC_CONTRA_MAX_PROMINENCE = -1.0 # ... or prominence < this -> contradiction (placeholder: off until calibrated)
 
 # ENF power-grid hum (§6.6). Conditional on the hour-1 go/no-go test.
-ENF_GO = False                       # set True ONLY if 50/100 Hz was found in >= 3 of 5 venue clips
+ENF_GO = False                       # set True ONLY if 50/100 Hz was found in >= 3 of 5 venue clips.
+                                     # Hour-1 test (scripts/test_enf.py): NO-GO, hum in 0 of 5 iPhone clips ->
+                                     # ENF is display-only: always insufficient_signal (low), never a verdict
 ENF_STFT_WINDOW_S = (4.0, 8.0)       # shorter end for short clips
 ENF_PEAK_HALF_WIDTH_HZ = 0.5         # signal band: f +/- 0.5 Hz
 ENF_NOISE_BAND_HZ = 5.0              # compared against a 5 Hz band around f
@@ -253,6 +270,15 @@ ENF_MIN_SNR_DB = 6.0
 ENF_MIN_FRAME_FRACTION = 0.60        # detected if SNR >= 6 dB in >= 60% of frames
 ENF_FREQS_50HZ = (50.0, 100.0)
 ENF_FREQS_60HZ = (60.0, 120.0)
+ENF_SHORT_CLIP_MIN_WIN_S = 2.0       # STFT window never below 2 s (0.5 Hz bins); shorter audio -> insufficient_signal
+ENF_MAX_SPAN_S = 12.0                # analyse only the first 12 s of audio (speed); limitation added when it cuts
+ENF_MAX_INPUTS = 2                   # analyse at most 2 audio/video inputs per investigation
+# Used only if ENF_GO is True (§6.6): 50/100 Hz + claim in these countries -> consistent; 60/120 Hz + claim in a
+# country NOT on a 60 Hz or mixed grid -> contradiction. ISO 3166-1 alpha-2.
+ENF_CONSISTENT_COUNTRIES = ("IN",)
+ENF_60HZ_COUNTRIES = ("US", "CA", "MX", "KR", "TW", "PH", "SA", "CO", "VE", "PE", "EC", "CR", "PA", "GT",
+                      "HN", "NI", "SV", "DO", "CU", "PR", "BS", "BZ", "LR", "FM", "GU", "AS")
+ENF_MIXED_GRID_COUNTRIES = ("JP", "BR")   # both 50 and 60 Hz in use: never a contradiction
 
 
 # =============================================================================
