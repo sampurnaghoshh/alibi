@@ -1,0 +1,198 @@
+{
+  "title": "ALIBI ENF (power-grid hum) hour-1 go/no-go test",
+  "date": "2026-11-19",
+  "protocol": "5 iPhone clips recorded indoors at the venue near lights and laptops; GO if 50 or 100 Hz is detected in >= 3 of 5 (CLAUDE.md \u00a76.6). Analysis: scripts/test_enf.py / app/witnesses/enf.py.",
+  "thresholds": {
+    "min_snr_db": 6.0,
+    "min_frame_fraction": 0.6,
+    "peak_half_width_hz": 0.5,
+    "noise_band_hz": 5.0,
+    "stft_window_s": [
+      4.0,
+      8.0
+    ]
+  },
+  "clips": [
+    {
+      "clip": "IMG_5383.MOV",
+      "duration_s": 22.46,
+      "sample_rate_hz": 48000,
+      "stft_window_s": 5.62,
+      "frames": 7,
+      "mains_50hz_grid_detected": false,
+      "frequencies": {
+        "50": {
+          "median_snr_db": 2.21,
+          "max_snr_db": 5.73,
+          "frames_above_snr": 0.0,
+          "detected": false
+        },
+        "60": {
+          "median_snr_db": 0.38,
+          "max_snr_db": 5.79,
+          "frames_above_snr": 0.0,
+          "detected": false
+        },
+        "100": {
+          "median_snr_db": 4.21,
+          "max_snr_db": 6.82,
+          "frames_above_snr": 0.143,
+          "detected": false
+        },
+        "120": {
+          "median_snr_db": -2.5,
+          "max_snr_db": 0.55,
+          "frames_above_snr": 0.0,
+          "detected": false
+        }
+      }
+    },
+    {
+      "clip": "IMG_5384.MOV",
+      "duration_s": 25.95,
+      "sample_rate_hz": 48000,
+      "stft_window_s": 6.49,
+      "frames": 7,
+      "mains_50hz_grid_detected": false,
+      "frequencies": {
+        "50": {
+          "median_snr_db": -0.04,
+          "max_snr_db": 3.84,
+          "frames_above_snr": 0.0,
+          "detected": false
+        },
+        "60": {
+          "median_snr_db": 2.79,
+          "max_snr_db": 5.21,
+          "frames_above_snr": 0.0,
+          "detected": false
+        },
+        "100": {
+          "median_snr_db": 5.88,
+          "max_snr_db": 10.16,
+          "frames_above_snr": 0.429,
+          "detected": false
+        },
+        "120": {
+          "median_snr_db": -0.7,
+          "max_snr_db": 2.51,
+          "frames_above_snr": 0.0,
+          "detected": false
+        }
+      }
+    },
+    {
+      "clip": "IMG_5388.MOV",
+      "duration_s": 15.22,
+      "sample_rate_hz": 48000,
+      "stft_window_s": 4.0,
+      "frames": 6,
+      "mains_50hz_grid_detected": false,
+      "frequencies": {
+        "50": {
+          "median_snr_db": -2.57,
+          "max_snr_db": 1.08,
+          "frames_above_snr": 0.0,
+          "detected": false
+        },
+        "60": {
+          "median_snr_db": 5.1,
+          "max_snr_db": 6.42,
+          "frames_above_snr": 0.333,
+          "detected": false
+        },
+        "100": {
+          "median_snr_db": 1.41,
+          "max_snr_db": 3.28,
+          "frames_above_snr": 0.0,
+          "detected": false
+        },
+        "120": {
+          "median_snr_db": -0.57,
+          "max_snr_db": 4.6,
+          "frames_above_snr": 0.0,
+          "detected": false
+        }
+      }
+    },
+    {
+      "clip": "IMG_5390.MOV",
+      "duration_s": 16.4,
+      "sample_rate_hz": 48000,
+      "stft_window_s": 4.1,
+      "frames": 7,
+      "mains_50hz_grid_detected": false,
+      "frequencies": {
+        "50": {
+          "median_snr_db": -5.59,
+          "max_snr_db": -3.59,
+          "frames_above_snr": 0.0,
+          "detected": false
+        },
+        "60": {
+          "median_snr_db": -3.35,
+          "max_snr_db": 0.24,
+          "frames_above_snr": 0.0,
+          "detected": false
+        },
+        "100": {
+          "median_snr_db": -2.16,
+          "max_snr_db": 0.4,
+          "frames_above_snr": 0.0,
+          "detected": false
+        },
+        "120": {
+          "median_snr_db": -0.72,
+          "max_snr_db": 5.95,
+          "frames_above_snr": 0.0,
+          "detected": false
+        }
+      }
+    },
+    {
+      "clip": "IMG_5394.MOV",
+      "duration_s": 27.43,
+      "sample_rate_hz": 48000,
+      "stft_window_s": 6.86,
+      "frames": 7,
+      "mains_50hz_grid_detected": false,
+      "frequencies": {
+        "50": {
+          "median_snr_db": -8.26,
+          "max_snr_db": -4.6,
+          "frames_above_snr": 0.0,
+          "detected": false
+        },
+        "60": {
+          "median_snr_db": -3.6,
+          "max_snr_db": 2.39,
+          "frames_above_snr": 0.0,
+          "detected": false
+        },
+        "100": {
+          "median_snr_db": -2.03,
+          "max_snr_db": 1.12,
+          "frames_above_snr": 0.0,
+          "detected": false
+        },
+        "120": {
+          "median_snr_db": -1.7,
+          "max_snr_db": 2.56,
+          "frames_above_snr": 0.0,
+          "detected": false
+        }
+      }
+    }
+  ],
+  "result": {
+    "clips_with_50_or_100hz": 0,
+    "clips_analysed": 5,
+    "needed": 3,
+    "decision": "NO-GO",
+    "consequence": "ENF ships display-only: always insufficient_signal (low), never a verdict (config.ENF_GO = False)."
+  },
+  "notes": {
+    "IMG_5384.MOV": "Closest to detection: 100 Hz cleared 6 dB in 43% of frames (60% needed).",
+    "IMG_5388.MOV": "Spurious 60 Hz trace (India is a 50 Hz grid) in 33% of frames, below the 60% needed: correctly ignored, not a 60 Hz detection."
+  }
+}
