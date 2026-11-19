@@ -286,6 +286,9 @@ All thresholds below are **starting values. Calibrate them on genuine clips** an
 - Archive: `data/archive/archive.json` plus the source clips. Each entry: `{ "clip_id", "title", "verified_date", "verified_location", "verified_by", "source_note", "frame_hashes": [hex...] }`.
 - `build_archive.py` (done): reads the hand-edited `data/archive/manifest.json` (format in the script's docstring; clip paths are relative to `data/archive/`), samples 1 frame/s, computes `imagehash.phash` (64-bit, 16 hex chars), and writes `archive.json` as `{ "built_at", "sample_fps", "hash", "clips": [entry, ...] }`. Each entry also has `frame_times_s` (same order as `frame_hashes`), `sha256`, `duration_s`, `sample_fps`, and optional `verified_lat`/`verified_lon` for distance checks. Run: `backend\.venv\Scripts\python.exe scripts\build_archive.py`.
 - **Use `app/media.py` in the witness:** `sample_frames(path, config.PRIOR_SAMPLE_FPS)` → `[(t, image)]`, `phash_hex(image)`, `hamming(a, b)`. The archive was built with the same functions, so hashes are comparable.
+  - Frames come back shrunk to `config.FRAME_SAMPLE_MAX_WIDTH` (640 px). Call `sample_frames` with its defaults, don't pass your own `max_width`.
+  - `archive.json` records the width as `frame_max_width`; if you change it, rebuild the archive.
+  - A test proves the archive and an uploaded copy hash identically.
 - Witness: sample the uploaded video the same way (images = 1 frame). A frame matches when Hamming distance ≤ 8. A clip matches when ≥ 3 frames, or ≥ 30% of sampled frames, match the same archive entry.
 - Rules:
   - Match **and** the verified date or location disagrees with the claim → `contradiction` (**high**). Title: "Frames match a clip verified as recorded in {place} on {date}".

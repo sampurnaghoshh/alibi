@@ -127,6 +127,9 @@ WEATHER_FORECAST_CACHE_TTL_S = 3600  # refresh cached forecast data after ~1 h w
 # Hand-edited list of verified clips; the builder adds frame hashes and writes ARCHIVE_JSON.
 # Sampling must match the prior_appearance witness: both use app/media.py with PRIOR_SAMPLE_FPS.
 ARCHIVE_MANIFEST = DATA_DIR / "archive" / "manifest.json"
+# Sampled frames are shrunk to this width before hashing (pHash only looks at 32x32 anyway).
+# Changing it changes every hash: rebuild data/archive/archive.json afterwards.
+FRAME_SAMPLE_MAX_WIDTH = 640
 
 # Runtime LLM (claim extraction + explanations only; never decides truth)
 LLM_PROVIDER = os.getenv("ALIBI_LLM_PROVIDER", "none").strip().lower()   # anthropic | gemini | none

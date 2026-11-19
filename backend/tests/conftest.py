@@ -38,14 +38,15 @@ def offline(tmp_path, monkeypatch):
 
 @pytest.fixture
 def make_video():
-    """make_video(path, seconds=3, fps=10, frame_fn=None) -> path. Skips if OpenCV is missing."""
+    """make_video(path, seconds=3, fps=10, size=64 or (w, h), frame_fn=None) -> path. Skips if OpenCV is missing."""
     cv2 = pytest.importorskip("cv2")
 
-    def _make(path: Path, seconds: float = 3.0, fps: int = 10, size: int = 64, frame_fn=None) -> Path:
-        writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"mp4v"), fps, (size, size))
+    def _make(path: Path, seconds: float = 3.0, fps: int = 10, size=64, frame_fn=None) -> Path:
+        w, h = (size, size) if isinstance(size, int) else size
+        writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"mp4v"), fps, (w, h))
         assert writer.isOpened(), "OpenCV cannot write mp4v on this machine"
         for i in range(int(seconds * fps)):
-            frame = frame_fn(i) if frame_fn else np.full((size, size, 3), (i * 7) % 255, dtype=np.uint8)
+            frame = frame_fn(i) if frame_fn else np.full((h, w, 3), (i * 7) % 255, dtype=np.uint8)
             writer.write(frame)
         writer.release()
         return path
