@@ -317,6 +317,9 @@ PRIOR_TIME_MACHINE_MAX_PAIRS = 3     # Sam's decision: 3 pairs = best match from
                                      # thirds of the matched frames (fewer matches: all of them)
 PRIOR_TIME_MACHINE_WIDTH = 640       # px, JPG width (display only; hashing is unaffected)
 PRIOR_TIME_MACHINE_JPEG_QUALITY = 80
+# Live Desk "frame filmstrip" (details.frame_strip): one small JPG per sampled upload frame, display only.
+PRIOR_STRIP_MAX_FRAMES = 48          # longer clips: evenly spread over the clip
+PRIOR_STRIP_THUMB_WIDTH = 160        # px
 
 
 # =============================================================================

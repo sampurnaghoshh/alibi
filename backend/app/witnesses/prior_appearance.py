@@ -339,6 +339,8 @@ class PriorAppearanceWitness(Witness):
                 "median_hamming": statistics.median(best["dists"]) if best["dists"] else None,
                 "closest_clip_id": best["clip"]["clip_id"],
             })
+            # Live Desk "frame filmstrip": every sampled upload frame with its best distance to this clip.
+            details["frame_strip"] = self._frame_strip(ctx, inp, total, frames, hashes, best, thr)
 
         if best is None or not best["is_match"]:
             return self.finding(
@@ -502,6 +504,34 @@ class PriorAppearanceWitness(Witness):
         except Exception as exc:  # noqa: BLE001 - the Time Machine is a display aid; never fail the finding
             out["frame_matches"] = []
             limitations.append(f"Matched frames could not be saved for display ({type(exc).__name__})")
+        return out
+
+    def _frame_strip(self, ctx: InvestigationContext, inp: InputRef, total: int, frames: list, hashes: list[str],
+                     row: dict, thr: int) -> dict:
+        """Every sampled upload frame (at most PRIOR_STRIP_MAX_FRAMES, evenly spread) as a small JPG thumbnail
+        with its smallest Hamming distance to the best (or closest) archive clip: the actual numbers the match
+        rule used. Display only: never raises; on a problem the strip is just shorter or empty."""
+        out: dict[str, Any] = {"clip_id": row["clip"]["clip_id"], "threshold": thr, "frames": []}
+        try:
+            nearest = nearest_frames(hashes, row["clip"].get("frame_hashes") or [])
+            idx = list(range(len(frames)))
+            cap = config.PRIOR_STRIP_MAX_FRAMES
+            if len(idx) > cap:
+                idx = sorted({round(i * (len(frames) - 1) / (cap - 1)) for i in range(cap)})
+            prefix = "" if total == 1 else f"{inp.file_id}_"
+            for i in idx:
+                t, img = frames[i]
+                d = nearest[i][0]
+                ref = f"frames/{prefix}strip_{i:03d}.jpg"
+                thumb = img.convert("RGB")
+                w = config.PRIOR_STRIP_THUMB_WIDTH
+                if thumb.width > w:
+                    thumb = thumb.resize((w, max(1, round(thumb.height * w / thumb.width))))
+                thumb.save(ctx.artifact_path(ref), "JPEG", quality=70)
+                out["frames"].append({"t": round(float(t), 3), "hamming": int(d), "matched": d <= thr,
+                                      "thumb": ctx.artifact_ref(ref)})
+        except Exception as exc:  # noqa: BLE001 - a display aid never breaks the finding
+            out["error"] = f"{type(exc).__name__}: {exc}"
         return out
 
     def _no_archive(self, why: str, n: int) -> Finding:

@@ -666,6 +666,12 @@ A live, end-to-end show of the whole system during the pitch, built on the same 
   - Witnesses that `/api/health` reports as `implemented: false` are shown muted as "Not available in this build". They get no graph edges and are counted apart, never as an investigation result.
   - **Case details** drawer (button or **D**): each input's SHA-256, size, duration and read-only stored path, plus the chain-of-custody log of the run's events.
   - Then the editorial evidence summary: the headline with a thin status bar, plain sentences built from what each witness checked (time / location / event scope; template, no LLM), e.g. "Recorded rainfall does not support the claimed flood. The capture time matches the stated time, which does not confirm the location or the event.", and per-witness counts. The calm "Human review required. This is an evidence report, not a verdict." banner is always visible.
+- **Evidence views (key V, `static/views.js`):** a second view in the same screen area as the witnesses, built only from the case's own data; each card appears when its data exists, never as an empty box:
+  - map: India outline (Natural Earth, India point of view, vendored), claimed place, verified archive place, file GPS, and the witnesses' own distances in km;
+  - time: the claimed window against the verified recording date and the file capture time, with the witnesses' gaps;
+  - frame filmstrip: `prior_appearance` `details.frame_strip`, one thumbnail per sampled frame plus its best Hamming distance;
+  - rain by hour, the 5 weather grid points, lip-sync curves (`lipsync_series.json`), the ENF and ELA images;
+  - provenance: SHA-256 plus custody events as they arrive.
 - **Re-run (`parent_id`):** a "Same file, new story" tag, and the old and new captions and headlines side by side.
 - **Time Machine:** if a prior_appearance finding has `details.frame_matches`, it shows the best-matching uploaded frame and archive frame side by side, with `verified_date`, `verified_location` and `verified_by`. Frame paths are run artifacts (`artifacts/...`) served from `/api/files/{id}/...`.
 - **Tests:** `tests/test_live_page.py` covers the page and its static files, no external URLs, licences, wording, a `node --check` of `live.js`, and the bot-username cache.

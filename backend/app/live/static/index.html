@@ -39,6 +39,7 @@
         <div id="rerun-tag" class="rerun-tag" hidden></div>
         <div class="head-right">
           <span id="case-status" class="case-status"></span>
+          <button id="views-btn" class="details-btn" type="button" hidden></button>
           <button id="details-btn" class="details-btn" type="button"></button>
           <span id="case-id" class="mono case-id"></span>
         </div>
@@ -73,6 +74,9 @@
         <div id="graph" class="graph"></div>
       </div>
     </section>
+
+    <!-- Evidence views (V): drawn only from this case's data; each card appears when its data exists -->
+    <section id="views" class="views" hidden></section>
 
     <section class="bottom">
       <div id="result" class="result pending">
@@ -109,8 +113,9 @@
     <dl class="help-keys">
       <dt><kbd>1</kbd></dt><dd>Run Case A</dd>
       <dt><kbd>2</kbd></dt><dd>Run Case B</dd>
-      <dt><kbd>Esc</kbd></dt><dd>Close a panel, then return to the idle screen</dd>
+      <dt><kbd>Esc</kbd></dt><dd>Close a panel or the views, then return to the idle screen</dd>
       <dt><kbd>I</kbd></dt><dd>Toggle the idle screen</dd>
+      <dt><kbd>V</kbd></dt><dd>Evidence views (map, time, frames, signals) or the witnesses</dd>
       <dt><kbd>D</kbd></dt><dd>Case details (SHA-256, custody log)</dd>
       <dt><kbd>?</kbd></dt><dd>Show or hide this help</dd>
     </dl>
@@ -131,6 +136,7 @@
   <script src="/live/static/vendor/cytoscape.min.js"></script>
   <script src="/live/static/vendor/qrcode.js"></script>
   <script src="/live/static/vendor/lucide/icons.js"></script>
+  <script src="/live/static/views.js"></script>
   <script src="/live/static/live.js"></script>
 </body>
 </html>

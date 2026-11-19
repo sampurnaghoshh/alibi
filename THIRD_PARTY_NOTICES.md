@@ -12,6 +12,7 @@ ALIBI's own source code is MIT-licensed (see `LICENSE`). The items below keep th
 | IBM Plex Mono 5.0.12 (font) | `backend/app/live/static/vendor/fonts/ibm-plex-mono-*.woff2` | SIL Open Font License 1.1, `vendor/fonts/LICENSE-ibm-plex-mono.txt` |
 | Lucide icons 0.460.0 | `backend/app/live/static/vendor/lucide/` | ISC, `vendor/lucide/LICENSE-lucide.txt` |
 | MediaPipe Face Landmarker model (float16) | `data/models/face_landmarker.task` | Apache License 2.0 (Google MediaPipe models; see `data/models/README.md`) |
+| Natural Earth admin-0 countries, India point of view (simplified) | `backend/app/live/static/vendor/geo/india.json` | Public domain (naturalearthdata.com) |
 
 Versions and SHA-256s of the Live Desk files: `backend/app/live/static/README.md`.
 

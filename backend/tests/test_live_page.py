@@ -1,5 +1,6 @@
 """Live Desk page (§14 step 3): GET /live, its static files, offline-only assets, wording, bot username."""
 
+import json
 import re
 import shutil
 import subprocess
@@ -13,7 +14,7 @@ from app.main import app
 
 client = TestClient(app)
 STATIC = config.LIVE_STATIC_DIR
-OWN_FILES = ["index.html", "live.css", "live.js"]
+OWN_FILES = ["index.html", "live.css", "live.js", "views.js"]
 GENERATED = ["vendor/lucide/icons.js"]          # built by us from the vendored Lucide SVGs
 
 
@@ -29,7 +30,7 @@ def test_every_referenced_static_file_is_served():
     refs = re.findall(r'(?:src|href)="(/live/static/[^"]+)"', html)
     assert set(refs) == {"/live/static/live.css", "/live/static/vendor/cytoscape.min.js",
                          "/live/static/vendor/qrcode.js", "/live/static/vendor/lucide/icons.js",
-                         "/live/static/live.js"}
+                         "/live/static/views.js", "/live/static/live.js"}
     types = {"css": "text/css", "js": "javascript"}
     for ref in refs:
         r = client.get(ref)
@@ -134,7 +135,7 @@ def test_detail_panel_sections_and_drawer():
 
 @pytest.mark.skipif(not shutil.which("node"), reason="node not installed")
 def test_live_js_parses():
-    for name in ("live.js", "vendor/lucide/icons.js"):
+    for name in ("live.js", "views.js", "vendor/lucide/icons.js"):
         r = subprocess.run(["node", "--check", str(STATIC / name)], capture_output=True, text=True)
         assert r.returncode == 0, (name, r.stderr)
 
@@ -171,3 +172,28 @@ def test_getme_result_is_cached_and_failures_back_off(monkeypatch):
     assert botinfo.bot_username(fetch=lambda: calls.append(1) or "alibi_desk_bot") == "alibi_desk_bot"
     assert botinfo.bot_username(fetch=lambda: calls.append(1) or "other") == "alibi_desk_bot"  # cached
     assert len(calls) == 2
+
+
+# --- Evidence views (V): only this case's data, offline map --------------------------------------
+
+def test_evidence_views_use_only_case_data_and_local_files():
+    js = (STATIC / "views.js").read_text(encoding="utf-8")
+    assert "Math.random" not in js and "setInterval" not in js          # nothing invented, no staged animation
+    fetched = set(re.findall(r'fetch\(([^)]*)\)', js))
+    assert fetched <= {'"/live/static/vendor/geo/india.json"', "fileUrl(state.id, ev.ref"}, fetched   # regex stops at the first )
+    for key in ("map", "time", "frames", "rain", "grid", "lipsync", "enf", "ela", "provenance"):
+        assert f"{key}:" in js, key
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    assert '<section id="views" class="views" hidden></section>' in html and "<kbd>V</kbd>" in html
+    live = (STATIC / "live.js").read_text(encoding="utf-8")
+    assert "AlibiViews.render(current)" in live and 'e.key === "v"' in live
+
+
+def test_india_outline_is_vendored_public_domain():
+    data = json.loads((STATIC / "vendor" / "geo" / "india.json").read_text(encoding="utf-8"))
+    assert "India point of view" in data["_source"] and "public domain" in data["_source"]
+    assert data["bbox"][3] > 36.5                                     # official outline incl. all of J&K
+    assert len(data["rings"]) >= 1 and all(len(r) >= 4 for r in data["rings"])
+    readme = (STATIC / "README.md").read_text(encoding="utf-8")
+    assert "india.json" in readme and "Natural Earth" in readme
+    assert client.get("/live/static/vendor/geo/india.json").status_code == 200

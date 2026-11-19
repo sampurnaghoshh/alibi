@@ -558,3 +558,34 @@ def test_zero_frame_count_builder_and_witness_agree_end_to_end(tmp_path, make_vi
     f = _run(tmp_path, up, "Flooding in Chennai yesterday")                # InputRef.duration_s = 6.0 (< 10 s)
     assert f.details["sample_fps"] == entry["sample_fps"] == 1.0
     assert f.details["matched_frames"] == len(entry["frame_hashes"]) and f.details["median_hamming"] == 0
+
+
+# --- Live Desk frame filmstrip (details.frame_strip) ------------------------------------------
+
+def test_frame_strip_has_every_sampled_frame_with_real_distances(tmp_path, archive, upload):
+    archive(verified_date="2024-07-25")
+    f = _run(tmp_path, upload, "Massive flooding in Chennai yesterday evening")
+    strip = f.details["frame_strip"]
+    assert strip["clip_id"] == f.details["closest_clip_id"] and strip["threshold"] == f.details["hamming_threshold"]
+    assert len(strip["frames"]) == f.details["sampled_frames"]
+    for fr in strip["frames"]:
+        assert fr["thumb"].startswith("artifacts/frames/strip_") and (tmp_path / fr["thumb"]).is_file()
+        assert isinstance(fr["hamming"], int) and fr["matched"] == (fr["hamming"] <= strip["threshold"])
+    assert sum(fr["matched"] for fr in strip["frames"]) == f.details["matched_frames"]
+
+
+def test_frame_strip_also_for_a_non_match(tmp_path, archive, make_video):
+    archive(verified_date="2024-07-25")
+    other = _video(make_video, tmp_path / "other.mp4", [90, 91, 92, 93, 94, 95])
+    f = _run(tmp_path, other, "Flooding in Chennai yesterday")
+    assert f.status == "inconclusive"
+    strip = f.details["frame_strip"]
+    assert strip["frames"] and not any(fr["matched"] for fr in strip["frames"])
+
+
+def test_frame_strip_failure_never_breaks_the_finding(tmp_path, archive, upload, monkeypatch):
+    archive(verified_date="2024-07-25")
+    monkeypatch.setattr(config, "PRIOR_STRIP_THUMB_WIDTH", "not a number")
+    f = _run(tmp_path, upload, "Massive flooding in Chennai yesterday evening")
+    assert (f.status, f.reliability) == ("contradiction", "high")
+    assert "error" in f.details["frame_strip"]

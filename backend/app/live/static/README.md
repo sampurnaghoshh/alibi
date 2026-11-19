@@ -7,6 +7,7 @@ Plain HTML + CSS + vanilla JS, no build step. Everything is local, so it works o
 |---|---|
 | `index.html` | layout: idle screen, caption, witness tiles + detail panel + execution timeline, graph, result / re-run / Time Machine panels, case details drawer, human-review banner |
 | `live.css` | case-file theme for the projector: the ALIBI design tokens (CLAUDE.md §9), §9 status colours |
+| `views.js` | Evidence views (key V): map, time, frame filmstrip, rain, lip-sync, ENF, ELA, provenance, drawn only from the case's own data |
 | `live.js` | listens to `/api/live/feed` and `/api/investigations/{id}/events` and draws what they say, as they say it |
 | `vendor/` | third-party libraries, vendored as files (no CDN) |
 
@@ -19,6 +20,7 @@ Plain HTML + CSS + vanilla JS, no build step. Everything is local, so it works o
 | Inter (font) | 5.0.18 | `vendor/fonts/inter-latin-{400,500,600,700}-normal.woff2` | SIL Open Font License 1.1 (OFL), see `vendor/fonts/LICENSE-inter.txt` | https://cdn.jsdelivr.net/npm/@fontsource/inter@5.0.18/files/ |
 | IBM Plex Mono (font) | 5.0.12 | `vendor/fonts/ibm-plex-mono-latin-{400,500}-normal.woff2` | SIL Open Font License 1.1 (OFL), see `vendor/fonts/LICENSE-ibm-plex-mono.txt` | https://cdn.jsdelivr.net/npm/@fontsource/ibm-plex-mono@5.0.12/files/ |
 | Lucide icons | 0.460.0 | `vendor/lucide/*.svg`, bundled into `vendor/lucide/icons.js` | ISC (Copyright (c) Lucide Contributors), see `vendor/lucide/LICENSE-lucide.txt` | https://cdn.jsdelivr.net/npm/lucide-static@0.460.0/icons/ |
+| Natural Earth admin-0 countries, **India point of view** (1:10m) | 5.1.x (2026-11-20) | `vendor/geo/india.json` (India only: outer rings, simplified with RDP 0.02°, 25 KB) | Public domain (naturalearthdata.com) | https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_admin_0_countries_ind.geojson |
 
 Downloaded once on 2026-11-19. SHA-256:
 - `cytoscape.min.js` `83e8c54a6bec655bfd81df07df605649c268af69aeca67a5ea2da54ea42dac81`
@@ -44,3 +46,7 @@ To update, download the new versions to the same file names and update this tabl
 - A new case (Telegram bot, upload, demo button or re-run) opens automatically.
 - `/live?id=inv_…` reopens a specific case (e.g. after a reload). **I** or **Esc** toggles the idle screen.
 - The idle screen shows the bot's @username and a QR code. The username comes from `TELEGRAM_BOT_USERNAME` in `backend/.env`, or from Telegram (`getMe`) when the API starts.
+
+The India outline uses Natural Earth's **India point-of-view** dataset, so the map follows India's official
+boundary (all of Jammu & Kashmir). Source file SHA-256: `3e67a5a6ddeff3247ca8400cd2514fd4a5ac6e5432823b25d610a7028597d45f`;
+`india.json` SHA-256: `b3ceec658de5c29f33f80dab667d0e00d7eb6a862750a0961cf999b9ecdb11f9`.

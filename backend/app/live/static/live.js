@@ -750,6 +750,27 @@
     body.appendChild(log);
   }
 
+  // ------------------------------------------------------------------ evidence views (V)
+  // views.js draws them from the same case data; this only switches between them and the witnesses.
+  function showViews(on) {
+    var views = $("views");
+    if (!views) return;
+    if (on === undefined) on = views.hidden;
+    if (on && !views.childElementCount) on = false;          // nothing to show yet: stay on the witnesses
+    views.hidden = !on;
+    document.querySelector(".middle").hidden = on;
+    $("views-btn").classList.toggle("on", on);
+    if (!on) { refit(); fitTiles(); }
+  }
+
+  function viewsChanged(count) {
+    var b = $("views-btn");
+    b.hidden = count === 0;
+    b.innerHTML = icon("scan-eye") + "<span></span>";
+    b.lastChild.textContent = "Evidence views · " + count;
+    if (count === 0 && !$("views").hidden) showViews(false);
+  }
+
   function toggleDrawer(on) {
     if (!current) return;
     if (on === undefined) on = $("drawer").hidden;
@@ -889,6 +910,8 @@
     $("timemachine").hidden = true;
     hideDetail();
     toggleDrawer(false);
+    if (window.AlibiViews) window.AlibiViews.reset();
+    showViews(false);
     setStatus("running");
     buildTiles();
     renderTimeline();
@@ -907,6 +930,7 @@
         if (t != null && (current.tLast == null || t > current.tLast)) current.tLast = t;
         fn(msg.data || {}, msg);
         renderDrawer();
+        if (window.AlibiViews) window.AlibiViews.render(current);
       });
     };
 
@@ -1001,6 +1025,8 @@
   $("drawer-close").innerHTML = icon("x");
   $("drawer-icon").innerHTML = icon("fingerprint");
   $("details-btn").innerHTML = icon("fingerprint") + "<span>Case details</span>";
+  $("views-btn").addEventListener("click", function () { showViews(); });
+  if (window.AlibiViews) window.AlibiViews.init($("views"), viewsChanged);
   $("detail-close").addEventListener("click", clearSelection);
   $("drawer-close").addEventListener("click", function () { toggleDrawer(false); });
   $("details-btn").addEventListener("click", function () { toggleDrawer(); });
@@ -1041,12 +1067,14 @@
     if (e.key === "Escape") {
       if (!$("help").hidden) { toggleHelp(false); return; }
       if (!$("drawer").hidden) { toggleDrawer(false); return; }
+      if (!$("views").hidden) { showViews(false); return; }
       if (current && current.sel) { clearSelection(); return; }
       showIdle(true);                                  // Esc always returns to the idle screen
       return;
     }
     if (DEMO_KEYS[e.key]) { triggerDemo(DEMO_KEYS[e.key]); return; }
     if ((e.key === "d" || e.key === "D") && current && $("idle").hidden) { toggleDrawer(); return; }
+    if ((e.key === "v" || e.key === "V") && current && $("idle").hidden) { showViews(); return; }
     if (e.key === "i" || e.key === "I") showIdle($("idle").hidden);
   });
   $("help-close").innerHTML = icon("x");

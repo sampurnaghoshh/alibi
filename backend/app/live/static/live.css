@@ -207,6 +207,46 @@ svg.ic { width: 1.15em; height: 1.15em; flex: none; vertical-align: -0.2em; }
 .custody .c-ev { font-family: var(--mono); color: var(--accent); }
 .custody .c-detail { color: var(--text-2); overflow-wrap: anywhere; }
 
+/* ---------- evidence views (V): same grid row as the witnesses, scrolls inside ---------- */
+.views { min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-auto-flow: row dense; align-content: start; gap: var(--s2); padding-right: 4px; }
+.vcard { align-self: start; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: var(--s2); min-width: 0; animation: fade 0.35s ease-out; }
+.vhead { display: flex; align-items: baseline; gap: var(--s2); flex-wrap: wrap; margin-bottom: var(--s1); }
+.vsub { color: var(--text-2); font-size: 0.8em; }
+.v-map { grid-row: span 2; }
+.v-time, .v-frames { grid-column: span 2; }
+.v-provenance { grid-column: 1 / -1; }
+.vmapwrap { position: relative; }
+.vmap { display: block; width: 100%; height: auto; max-height: 48vh; }
+.vgrid { display: block; width: 100%; height: auto; max-height: 220px; }
+.vlegend { display: flex; flex-wrap: wrap; gap: 4px var(--s2); margin-top: var(--s1); font-size: 0.78em; color: var(--text); }
+.vkey { display: inline-flex; align-items: center; gap: 6px; }
+.vkey i { display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--accent); }
+.vkey.k-verified i { border: 0; background: var(--text); transform: rotate(45deg); border-radius: 2px; width: 10px; height: 10px; }
+.vkey.k-gps i { border: 0; background: var(--supports); border-radius: 2px; }
+.vkey.k-mouth i { border: 0; height: 3px; border-radius: 2px; background: var(--accent); }
+.vkey.k-audio i { border: 0; height: 3px; border-radius: 2px; background: var(--inconc); }
+.vkey.k-speech i { border: 0; border-radius: 2px; background: rgba(146,157,167,0.25); }
+.vtime, .vchart { display: block; width: 100%; height: auto; }
+.vstrip { display: flex; gap: var(--s1); overflow-x: auto; padding-bottom: 6px; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.vframe { margin: 0; flex: 0 0 auto; width: 96px; }
+.vframe img { display: block; width: 96px; height: 120px; object-fit: contain; background: #000;
+  border: 1px solid var(--border); border-radius: 6px; }
+.vframe.ok img { border-color: var(--supports); }
+.vbar { position: relative; height: 6px; background: var(--elevated); border-radius: 3px; margin-top: 4px; }
+.vbar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; background: var(--inconc); }
+.vframe.ok .vbar i { background: var(--supports); }
+.vbar b { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--text-2); }
+.vframe figcaption { font-size: 0.66em; color: var(--text-2); margin-top: 2px; white-space: nowrap; }
+.vimg { display: block; width: 100%; max-height: 240px; object-fit: contain; background: #000; border-radius: 8px; }
+.vhash { display: flex; gap: var(--s2); align-items: baseline; flex-wrap: wrap; font-size: 0.85em; margin-bottom: 6px; }
+.vhash-name { font-weight: 500; }
+.vchips { display: flex; flex-wrap: wrap; gap: 6px; }
+.vchip { font-size: 0.72em; color: var(--text-2); border: 1px solid var(--border); border-radius: 999px;
+  padding: 1px 10px; animation: fade 0.35s ease-out; }
+.vchip .mono { color: var(--text); }
+
 /* ---------- keyboard help (? toggles it) ---------- */
 .help { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(560px, 90vw); z-index: 20;
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
@@ -263,6 +303,11 @@ kbd { font-family: var(--mono); font-size: 0.85em; border: 1px solid var(--borde
   .sentence { margin-top: 6px; }
   .banner { padding: 6px 12px; }
   .tm-cols img { max-height: 11vh; }   /* keep room for the tiles above */
+  .views { gap: 12px; }
+  .vcard { padding: 12px; }
+  .vmap { max-height: 46vh; }
+  .vframe, .vframe img { width: 78px; }
+  .vframe img { height: 96px; }
 }
 
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
