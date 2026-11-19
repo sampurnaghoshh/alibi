@@ -118,7 +118,8 @@ class RunStore:
                 out.write(chunk)
         os.chmod(dest, stat.S_IREAD)    # read-only (Windows: read-only attribute)
 
-        mime = mime or mimetypes.guess_type(filename)[0] or "application/octet-stream"
+        if not mime or mime == "application/octet-stream":   # browsers sometimes send nothing useful
+            mime = mimetypes.guess_type(filename)[0] or "application/octet-stream"
         info = InputFile(
             file_id=file_id,
             name=filename,

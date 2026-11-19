@@ -1,9 +1,8 @@
 """
 ALIBI API (CLAUDE.md §8). Owner: Sampurna.
 
-STATUS: fixture mode. POST /api/investigations returns shared/fixtures/sample_investigation.json
-so the frontend can build against the real routes. Integration (storage -> claims -> runner ->
-rules -> graph) replaces `_fixture()` in create_investigation at H10.
+POST /api/investigations runs the real pipeline (app/pipeline.py) and saves the run under data/runs/.
+GET /api/fixture serves the Case A sample investigation for frontend work.
 
 Run (from backend/):  uvicorn app.main:app --reload --port 8000
 """
@@ -11,19 +10,24 @@ Run (from backend/):  uvicorn app.main:app --reload --port 8000
 from __future__ import annotations
 
 import html
+import logging
 import shutil
 from typing import Any, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
+from pydantic import ValidationError
 
 from app import config
+from app.pipeline import Upload, run_investigation
 from app.runner import all_witnesses
 from app.schemas import Investigation, InvestigationSummary
 from app.storage import RunStore, list_investigations, parse_posted_at
 
-app = FastAPI(title="ALIBI", description="Explainable multimedia verification", version="0.1.0")
+log = logging.getLogger("alibi.api")
+
+app = FastAPI(title="ALIBI", description="Explainable multimedia verification", version="0.2.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -33,54 +37,59 @@ app.add_middleware(
 )
 
 
-def _fixture() -> Investigation:
-    """The Case A sample investigation, validated against the contract on every load."""
-    return Investigation.model_validate_json(config.FIXTURE_PATH.read_text(encoding="utf-8"))
-
-
 def _get(inv_id: str) -> Investigation:
-    """Saved run first, then the fixture, else 404."""
+    """A saved run from data/runs/, else 404."""
     try:
         store = RunStore(inv_id)
     except ValueError:
         raise HTTPException(404, "investigation not found")
-    if store.exists():
-        return store.load_investigation()
-    fixture = _fixture()
-    if inv_id == fixture.id:
-        return fixture
-    raise HTTPException(404, "investigation not found")
+    if not store.exists():
+        raise HTTPException(404, "investigation not found")
+    return store.load_investigation()
 
 
 # --- routes -----------------------------------------------------------------
 
 @app.post("/api/investigations", response_model=Investigation)
-async def create_investigation(
+def create_investigation(   # sync on purpose: FastAPI runs it in a worker thread
     files: Optional[list[UploadFile]] = File(default=None),   # FormData.append("files", file) per file
     caption: str = Form(default=""),
     posted_at: Optional[str] = Form(default=None),            # "2026-11-19" or ISO datetime; default now
 ) -> Investigation:
     try:
-        parse_posted_at(posted_at)
+        posted = parse_posted_at(posted_at)
     except ValueError:
         raise HTTPException(422, "posted_at must be an ISO date or datetime, e.g. 2026-11-19")
-    # TODO(H10): store originals, extract claims, run witnesses, rules, graph, save.
-    return _fixture()
+    files = files or []
+    if not files and not caption.strip():
+        raise HTTPException(422, "provide at least one file or a caption")
+
+    uploads = [
+        Upload(filename=f.filename or f"upload_{n}", stream=f.file, mime=f.content_type)
+        for n, f in enumerate(files, 1)
+    ]
+    try:
+        return run_investigation(uploads, caption, posted)
+    except ValidationError as exc:  # an assembled investigation broke the contract: a bug, not user error
+        log.exception("investigation failed contract validation")
+        raise HTTPException(500, f"investigation failed contract validation: {exc.error_count()} errors")
 
 
 @app.get("/api/investigations", response_model=list[InvestigationSummary])
 def list_runs() -> list[InvestigationSummary]:
-    """Past runs, newest first (the fixture is always included for now)."""
-    runs = list_investigations()
-    fixture = _fixture()
-    if all(r.id != fixture.id for r in runs):
-        runs.append(fixture)
-    return [InvestigationSummary.from_investigation(r) for r in runs]
+    """Saved runs, newest first."""
+    return [InvestigationSummary.from_investigation(r) for r in list_investigations()]
 
 
 @app.get("/api/investigations/{inv_id}", response_model=Investigation)
 def get_investigation(inv_id: str) -> Investigation:
     return _get(inv_id)
+
+
+@app.get("/api/fixture", response_model=Investigation)
+def get_fixture() -> Investigation:
+    """The Case A sample investigation (shared/fixtures/sample_investigation.json), validated on load."""
+    return Investigation.model_validate_json(config.FIXTURE_PATH.read_text(encoding="utf-8"))
 
 
 @app.get("/api/files/{inv_id}/{path:path}")
@@ -118,7 +127,7 @@ def health() -> dict[str, Any]:
     """What is available on this machine. The frontend can show this on the upload page."""
     return {
         "status": "ok",
-        "mode": "fixture",
+        "mode": "live",
         "tools": {t: shutil.which(t) is not None for t in ("ffmpeg", "ffprobe", "exiftool")},
         "llm": {"provider": config.LLM_PROVIDER, "configured": config.llm_configured()},
         "witnesses": [

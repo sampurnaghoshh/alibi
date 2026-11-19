@@ -314,14 +314,17 @@ Transparent, deterministic, explainable. **No averaging.**
    - Else `not_applicable`.
    - Low-reliability contradictions go to `weak_indicators` and never set a family status.
    - Several contradictions in one family count **once** for the headline (they aren't independent), but every finding is still shown on its own.
+   - A family whose only finding is a low-reliability contradiction is `inconclusive` (a witness spoke, but too weakly to count), never `contradiction`.
+   - `weak_indicators` = all low-reliability contradictions **plus** every ELA finding (§6.7).
 3. **Headline:**
    - `context_not_supported` / `signals_inconsistent`: ≥ 1 high-reliability contradiction, **or** contradictions in ≥ 2 families. Pick the text by which family contradicts (context → "The stated context is not supported by the available evidence"; signal → "Audio-visual signals show inconsistencies").
-   - `partially_supported`: exactly 1 family with a medium contradiction and nothing high.
-   - `consistent_so_far`: ≥ 2 families consistent and no contradictions. Text: "No contradictions found in the available evidence". Never "authentic".
-   - `insufficient_evidence`: everything else.
+   - `partially_supported`: exactly 1 family with a medium contradiction and nothing high. Text by family: context → "Part of the available evidence does not support the stated context"; signal → "One audio-visual signal shows a possible inconsistency".
+   - `consistent_so_far`: ≥ 2 families consistent and no contradictions (not even low ones). Text: "No contradictions found in the available evidence". Never "authentic".
+   - `insufficient_evidence`: everything else. Text: "Not enough evidence to support or contradict the stated context".
+   - All texts live in `config.py` (`HEADLINE_TEXT`, `PARTIAL_HEADLINE_TEXT`).
 4. **human_review:** always present. `priority` if there's any contradiction, else `standard`. The UI always shows "Human review required. This is an evidence report, not a verdict."
-5. **experimental_score** (optional, small, never the headline): start at 100, −30 per high contradiction, −15 per medium, −5 per low, −3 per inconclusive, floor 0. Always shown with its label.
-6. **Explanations:** after the rules run, the LLM may rewrite `title`/`summary` into plain English, **given only the finding JSON**, and it must not change status or numbers. If the LLM is off, use template strings.
+5. **experimental_score** (optional, small, never the headline): start at 100, −30 per high contradiction, −15 per medium, −5 per low, −3 per inconclusive, floor 0. `insufficient_signal` and `not_applicable` cost 0 (absence of evidence is not evidence). Always shown with its label.
+6. **Explanations:** after the rules run, the LLM may rewrite `title`/`summary` into plain English, **given only the finding JSON**, and it must not change status or numbers. If the LLM is off, use template strings. (`app/engine/explain.py`: a rewrite is rejected unless it keeps exactly the same numbers and has no forbidden words. Witnesses may omit `title`/`summary` in `self.finding(...)` to get the template.)
 
 `app/engine/graph.py` builds nodes and edges from claims and findings (§4.5).
 
@@ -367,6 +370,7 @@ alibi/
 |---|---|---|
 | POST | `/api/investigations` | multipart: `files[]`, `caption`, `posted_at` → runs synchronously, returns `Investigation` |
 | GET | `/api/investigations/{id}` | fetch a saved investigation |
+| GET | `/api/fixture` | the Case A sample investigation (`shared/fixtures/sample_investigation.json`) for frontend work |
 | GET | `/api/investigations` | list past runs (history page) |
 | GET | `/api/files/{inv_id}/{path}` | serve originals (read-only) and artifacts |
 | GET | `/api/investigations/{id}/report` | printable HTML report (browser → Save as PDF) |
@@ -415,7 +419,7 @@ Note: a Claude Code subscription is not an API key. The app's runtime LLM needs 
    - **Export:** "Open report" → printable page.
 3. **History** (`/history`): past investigations.
 
-Build everything against `shared/fixtures/sample_investigation.json` first. Switch to the live API when the backend is ready.
+Build everything against `shared/fixtures/sample_investigation.json` first (also served at `GET /api/fixture`). Switch to the live API when the backend is ready. The live pipeline is wired: `POST /api/investigations` returns a real `Investigation`; until the witnesses are filled in, their findings are placeholders.
 
 ### Status vocabulary (use exactly these)
 | Status | Label in UI | Colour |

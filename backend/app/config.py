@@ -47,6 +47,39 @@ WITNESS_TIMEOUT_OVERRIDES_S = {"lipsync": 90.0}
 SCORE_START = 100
 SCORE_PENALTY = {"high": 30, "medium": 15, "low": 5}   # per contradiction, by reliability
 SCORE_PENALTY_INCONCLUSIVE = 3                          # per inconclusive finding
+# insufficient_signal and not_applicable cost 0 (absence of evidence is not evidence).
+
+# Rule engine (§7). Headline texts: fixed templates, never the forbidden words of §9.
+HEADLINE_TEXT = {
+    "context_not_supported": "The stated context is not supported by the available evidence",
+    "signals_inconsistent": "Audio-visual signals show inconsistencies",
+    "consistent_so_far": "No contradictions found in the available evidence",
+    "insufficient_evidence": "Not enough evidence to support or contradict the stated context",
+}
+# partially_supported: one family contradicts at medium reliability; text depends on which.
+PARTIAL_HEADLINE_TEXT = {
+    "context": "Part of the available evidence does not support the stated context",
+    "signal": "One audio-visual signal shows a possible inconsistency",
+    "pixels": "One pixel-level indicator shows a possible inconsistency",
+}
+# Witnesses whose findings are always weak indicators, whatever their status (§6.7: ELA).
+WEAK_INDICATOR_WITNESSES = ("ela",)
+
+# Readable witness names (graph labels, template explanations).
+WITNESS_LABELS = {
+    "metadata": "Metadata",
+    "weather": "Weather",
+    "prior_appearance": "Prior appearance",
+    "lipsync": "Lip-sync",
+    "enf": "Power-grid hum",
+    "ela": "ELA",
+}
+
+# §2.7 / §9: never in UI, report or explanation text. "authentic" covers "authenticity".
+FORBIDDEN_WORDS_RE = r"\b(fake|real|authentic\w*|proven|definitely|AI-generated)\b"
+
+# Explanations (§7.6): let the LLM reword titles/summaries. Off unless a provider is configured.
+LLM_EXPLAIN = os.getenv("ALIBI_LLM_EXPLAIN", "1") == "1"
 
 # Runtime LLM (claim extraction + explanations only; never decides truth)
 LLM_PROVIDER = os.getenv("ALIBI_LLM_PROVIDER", "none").strip().lower()   # anthropic | gemini | none

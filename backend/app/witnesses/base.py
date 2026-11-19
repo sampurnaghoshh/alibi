@@ -114,17 +114,22 @@ class Witness(ABC):
         *,
         status: Status,
         reliability: Reliability,
-        title: str,
-        summary: str,
         alternatives: Iterable[str],
         limitations: Iterable[str],
+        title: Optional[str] = None,
+        summary: Optional[str] = None,
         claim_ids: Iterable[str] = (),
         details: Optional[dict[str, Any]] = None,
         evidence: Iterable[Evidence | dict] = (),
         locations: Iterable[Any] = (),
         n: int = 1,
     ) -> Finding:
-        """Build a Finding with id/witness/family filled in. Use n=2, 3... for extra findings."""
+        """Build a Finding with id/witness/family filled in. Use n=2, 3... for extra findings.
+        Omit title/summary to get the template text from app/engine/explain.py."""
+        from app.engine.explain import template_summary, template_title
+
+        title = title or template_title(self.name, status)
+        summary = summary or template_summary(self.name, status, reliability)
         return Finding(
             id=f"f_{self.name}_{n}",
             witness=self.name,
