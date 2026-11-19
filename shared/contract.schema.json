@@ -850,6 +850,19 @@
           "title": "Created At",
           "type": "string"
         },
+        "parent_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "set on caption re-runs",
+          "title": "Parent Id"
+        },
         "caption": {
           "title": "Caption",
           "type": "string"
@@ -892,6 +905,7 @@
       "required": [
         "id",
         "created_at",
+        "parent_id",
         "caption",
         "inputs",
         "headline",
@@ -921,6 +935,20 @@
       "format": "date-time",
       "title": "Posted At",
       "type": "string"
+    },
+    "parent_id": {
+      "anyOf": [
+        {
+          "pattern": "^inv_\\d{8}_\\d{6}_[0-9a-z]{4}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Set on a caption re-run: the investigation whose stored files were re-used.",
+      "title": "Parent Id"
     },
     "caption": {
       "default": "",
@@ -966,6 +994,7 @@
     "id",
     "created_at",
     "posted_at",
+    "parent_id",
     "caption",
     "inputs",
     "claims",

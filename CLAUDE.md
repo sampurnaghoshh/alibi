@@ -49,10 +49,10 @@ ALIBI treats each kind of evidence (caption text, metadata, weather records, ear
 
 | Person | AI tools | Owns | Files |
 |---|---|---|---|
-| **Sampurna** (lead) | Claude Code (Opus) in VS Code | Repo skeleton, **evidence contract**, **rule engine**, graph builder, FastAPI app, storage, report, integration, final merges, **claim extraction** + LLM client (taken over from Nooman), **weather witness**, **ELA witness** and **archive builder** (taken over from Adithi) | `backend/app/main.py`, `schemas.py`, `engine/*`, `storage.py`, `report.py`, `pipeline.py`, `media.py`, `uploads.py`, `demo.py`, `claims/*`, `shared/*`, `witnesses/weather.py`, `witnesses/ela.py`, `scripts/build_archive.py`, `scripts/warm_cache.py` |
+| **Sampurna** (lead) | Claude Code (Opus) in VS Code | Repo skeleton, **evidence contract**, **rule engine**, graph builder, FastAPI app, storage, report, integration, final merges, **claim extraction** + LLM client (taken over from Nooman), **weather witness**, **ELA witness** and **archive builder** (taken over from Adithi), **Live Desk** (§14) | `backend/app/live/*`, `backend/app/bot/*`, `frontend/app/live/*`, `backend/app/main.py`, `schemas.py`, `engine/*`, `storage.py`, `report.py`, `pipeline.py`, `media.py`, `uploads.py`, `demo.py`, `claims/*`, `shared/*`, `witnesses/weather.py`, `witnesses/ela.py`, `scripts/build_archive.py`, `scripts/warm_cache.py` |
 | **Nooman** | Claude Code (Opus) in VS Code | **Lip-sync witness**, **ENF audio witness** (conditional), calibration scripts | `witnesses/lipsync.py`, `witnesses/enf.py`, `scripts/calibrate_*.py`, `scripts/test_enf.py` |
 | **Adithi** | Free LLMs | **Metadata witness**, **prior-appearance witness** | `witnesses/metadata.py`, `witnesses/prior_appearance.py` |
-| **Dhruva** | Free LLMs | **Entire frontend**: upload page, investigation dashboard, contradiction graph, witness cards, evidence drawer, report view, demo polish | `frontend/*` |
+| **Dhruva** | Free LLMs | **Entire frontend** except the Live Desk page: upload page, investigation dashboard, contradiction graph, witness cards, evidence drawer, report view, demo polish | `frontend/*` except `frontend/app/live/*` |
 
 **Rule:** don't edit files you don't own. Need a change elsewhere? Message the owner. Contract changes (`schemas.py`, `shared/contract.schema.json`, `shared/fixtures/*`) are made **only by Sampurna** and announced in the group.
 
@@ -172,6 +172,9 @@ Witness → family (fixed):
 - Each claim's `source.text` must equal `caption[start:end]`.
 - `claim_ids`, location `file_id`s, `weak_indicators` and graph edges must point at things that exist, and `assessment.counts` must match the findings.
 - After changing `schemas.py`, regenerate the JSON Schema: `cd backend; python -m app.schemas`. `pytest` fails if it is stale.
+
+- `parent_id` (Investigation and InvestigationSummary): `null`, or on a caption re-run (§14) the id of the investigation whose stored files were re-used.
+- `history` stays `{ts, event, detail}`. The run's `history.jsonl` additionally stores a `data` payload per line for the live event stream (§14).
 
 ### 4.7 InvestigationSummary (what `GET /api/investigations` returns, for the history page)
 A list, newest first. Fetch the full `Investigation` by `id` for anything else. In `contract.schema.json` it is under `$defs/InvestigationSummary`.
@@ -390,6 +393,10 @@ alibi/
 | GET | `/api/fixture` | the Case A sample investigation (`shared/fixtures/sample_investigation.json`) for frontend work |
 | GET | `/api/demo` | preset cases from `demo/captions.md` (for the Case A / Case B buttons) |
 | POST | `/api/demo/{case_name}` | run a preset case (its files, caption, posted_at) with no file picking → `Investigation` |
+| POST | `/api/investigations?async=true` | same upload, returns **202** `{id, status, events, investigation}` at once and analyses in the background (§14) |
+| GET | `/api/investigations/{id}/events` | server-sent events: the real pipeline events of that run, in order (§14) |
+| POST | `/api/investigations/{id}/rerun` | JSON `{caption, posted_at}` → new `Investigation` on the same files, `parent_id` = id (also `?async=true`) |
+| GET | `/api/live/feed` | server-sent events announcing every new investigation (§14) |
 | GET | `/api/investigations` | list past runs (history page) |
 | GET | `/api/files/{inv_id}/{path}` | serve originals (read-only) and artifacts |
 | GET | `/api/investigations/{id}/report` | printable HTML report (browser → Save as PDF) |
@@ -532,3 +539,54 @@ Stand-up every 3 hours (5 min): done / next / blocked.
 - Never write UI text or report text using the forbidden words in §9.
 - Don't add features outside §5 (feature freeze). If something seems missing, propose it to the user and don't build it.
 - When unsure about the forensic meaning of a result, choose the more cautious status (`inconclusive`).
+
+---
+
+## 14. Live Desk (wow layer; approved by Sampurna, owned entirely by Sampurna)
+
+A live, end-to-end show of the whole system during the pitch, built on the same pipeline, contract and rules. It is an exception to the feature freeze in §2.8, approved by the team lead. **Owner:** Sampurna. **Files:** `backend/app/live/*`, `backend/app/bot/*`, `frontend/app/live/*`. Dhruva's frontend files stay his; the Live Desk page lives only under `frontend/app/live/`.
+
+### The flow
+1. **A judge sends a video to the ALIBI Telegram bot as a FILE** (document), with a caption. Sending it as a file matters: Telegram re-compresses videos sent as "video", which would change the original. The bot stores what it received (SHA-256, read-only, §2.6).
+2. **Instant claims reply.** Within seconds the bot answers with the claims it found ("Place: Chennai · Time: yesterday evening · Condition: flooding"), each traceable to the caption text.
+3. **Live investigation on the big screen.** The Live Desk page (`/live`) picks up the new case from the live feed and opens it automatically. Witnesses appear as they start and finish, the graph builds, and the headline lands. All of it comes from the run's real events, with no fake delays.
+4. **Verdict + report back in Telegram.** The bot sends the headline in §9 vocabulary, always with "Human review required. This is an evidence report, not a verdict." It also sends the printable report as a document.
+5. **Phone briefing to the human reviewer.** A Sarvam voice call reads a short briefing to the on-duty reviewer: headline, contradictions, what needs checking. This is the human-in-the-loop beat.
+6. **Caption re-run turns it green.** The reviewer (or judge) sends a corrected caption. `POST /api/investigations/{id}/rerun` re-checks the same stored files against the new story. It turns green only if the evidence supports it; the system never forces a result, and §2 applies unchanged.
+
+**Budget rule (§6.1) applies:** the Telegram Bot API is free. Use Sarvam only within free credits. If a call would cost money, skip it and send a text briefing instead.
+
+### Step 1: live engine (done)
+- **`POST /api/investigations?async=true`:** validates and stores the originals during the request, returns **202** `{id, status: "running", parent_id, events, investigation}` at once, and analyses in a background worker (`config.LIVE_BACKGROUND_WORKERS`). Meanwhile `GET /api/investigations/{id}` returns **202** `{status: "running"}`, and a failed run returns 500 with the error.
+- **`GET /api/investigations/{id}/events`** (server-sent events): the run's `history.jsonl` is the single source of truth. The stream follows the file as the pipeline writes it and sends each line once, in order. It never invents an event or adds a delay. Each message has these fields:
+  - `id:` the line number (send `Last-Event-ID` to resume after it)
+  - `event:` the event name
+  - `data:` `{ts, event, detail, data}`
+
+  | event | `data` payload |
+  |---|---|
+  | `file_received` | `{input}` (an `InputFile`; plus `copied_from` on re-runs) |
+  | `claims_extracted` | `{claims: Claim[]}` |
+  | `witness_started` | `{witness, family, label}` |
+  | `witness_completed` / `witness_failed` | `{witness, elapsed_ms, findings: Finding[]}` (plus `reused_from` on re-runs), sent the moment that witness really finishes |
+  | `assessment_computed` | `{assessment}` |
+  | `graph_ready` | `{graph}` |
+  | `done` | `{id, headline, headline_text, human_review, parent_id}`, then the stream closes. On error, `failed` with `{error}`. |
+
+  A finished run replays its whole log. The saved `Investigation.history` keeps only `{ts, event, detail}` and ends at `graph_ready`, because `done` is logged after saving.
+- **`POST /api/investigations/{id}/rerun`**, JSON `{caption, posted_at?}` (also `?async=true`). It creates a **new** investigation with `parent_id` = id:
+  - The originals are copied, and each SHA-256 is checked first; a mismatch returns 409.
+  - Claims are re-extracted, and the caption-dependent witnesses run again (`config.RERUN_CAPTION_DEPENDENT`: metadata, weather, prior_appearance).
+  - The caption-independent findings are re-used (`config.RERUN_REUSED`: ela, lipsync, enf), together with their artifacts. Each gets a limitation saying it was re-used. Its claim links are kept only where the new caption makes the same claim.
+  - Unknown id → 404. A parent that's still running or failed → 409. An empty caption → 422.
+- **`GET /api/live/feed`** (server-sent events) announces every new investigation, including re-runs and demo runs:
+  - `investigation_started` `{id, created_at, caption, posted_at, inputs[], parent_id}`
+  - `investigation_done` `{id, headline, headline_text, human_review, parent_id}`
+  - `investigation_failed` `{id, error, parent_id}`
+
+  Keepalive comments are sent every 15 s; `?limit=N` closes the stream after N messages. The feed is in-process, so **run uvicorn with one worker**.
+
+### Next steps
+- Step 2: Telegram bot (`backend/app/bot/`).
+- Step 3: Live Desk page (`frontend/app/live/`).
+- Step 4: Sarvam briefing.

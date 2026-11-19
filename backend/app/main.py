@@ -5,24 +5,29 @@ POST /api/investigations runs the real pipeline (app/pipeline.py) and saves the 
 Uploads are validated first (app/uploads.py): max 5 files, 200 MB each, real image/video/audio content.
 GET /api/demo + POST /api/demo/{case} run the presets in demo/captions.md (no file picking).
 GET /api/fixture serves the Case A sample investigation for frontend work.
+Live Desk (§14): ?async=true, GET .../events (SSE), POST .../rerun, GET /api/live/feed (SSE).
 
-Run (from backend/):  uvicorn app.main:app --reload --port 8000
+Run (from backend/):  uvicorn app.main:app --reload --port 8000   (one worker: the live feed is in-process)
 """
 
 from __future__ import annotations
 
 import logging
 import shutil
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Body, FastAPI, File, Form, Header, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse
-from pydantic import ValidationError
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
+from pydantic import BaseModel, ValidationError
 
 from app import config
 from app.demo import load_cases
-from app.pipeline import Upload, run_investigation
+from app.live import events as live_events
+from app.live import feed as live_feed
+from app.live import jobs
+from app.live.sse import SSE_HEADERS
+from app.pipeline import Prepared, Upload, execute, prepare, prepare_rerun, run_investigation
 from app.report import render_report
 from app.runner import all_witnesses
 from app.schemas import Investigation, InvestigationSummary
@@ -42,12 +47,14 @@ app.add_middleware(
 
 
 def _get(inv_id: str) -> Investigation:
-    """A saved run from data/runs/, else 404."""
+    """A finished run from data/runs/, else 404 (409 while it is still running)."""
     try:
         store = RunStore(inv_id)
     except ValueError:
         raise HTTPException(404, "investigation not found")
     if not store.exists():
+        if store.status() == "running":
+            raise HTTPException(409, f"Investigation {inv_id} is still running.")
         raise HTTPException(404, "investigation not found")
     return store.load_investigation()
 
@@ -59,7 +66,8 @@ def create_investigation(   # sync on purpose: FastAPI runs it in a worker threa
     files: Optional[list[UploadFile]] = File(default=None),   # FormData.append("files", file) per file
     caption: str = Form(default=""),
     posted_at: Optional[str] = Form(default=None),            # "2026-11-19" or ISO datetime; default now
-) -> Investigation:
+    run_async: bool = Query(default=False, alias="async"),    # ?async=true -> 202 + id, runs in background
+):
     try:
         posted = parse_posted_at(posted_at)
     except ValueError:
@@ -77,7 +85,25 @@ def create_investigation(   # sync on purpose: FastAPI runs it in a worker threa
         ]
     except UploadError as exc:
         raise HTTPException(exc.status, exc.message)
-    return _run([Upload(c.filename, c.stream, c.mime, c.declared_mime) for c in checked], caption, posted)
+    uploads = [Upload(c.filename, c.stream, c.mime, c.declared_mime) for c in checked]
+    if run_async:
+        return _start_async(lambda: prepare(uploads, caption, posted))
+    return _run(uploads, caption, posted)
+
+
+def _start_async(make: Callable[[], Prepared]) -> JSONResponse:
+    """Store the originals now (the request's files are still open), analyse in the background."""
+    try:
+        p = make()
+    except Exception as exc:  # noqa: BLE001
+        log.exception("could not start investigation")
+        raise HTTPException(500, f"The investigation could not be started: {type(exc).__name__}: {exc}")
+    jobs.submit(lambda: execute(p))
+    return JSONResponse(status_code=202, content={
+        "id": p.inv_id, "status": "running", "parent_id": p.parent.id if p.parent else None,
+        "events": f"/api/investigations/{p.inv_id}/events",
+        "investigation": f"/api/investigations/{p.inv_id}",
+    })
 
 
 def _run(uploads: list[Upload], caption: str, posted) -> Investigation:
@@ -129,8 +155,74 @@ def list_runs() -> list[InvestigationSummary]:
 
 
 @app.get("/api/investigations/{inv_id}", response_model=Investigation)
-def get_investigation(inv_id: str) -> Investigation:
-    return _get(inv_id)
+def get_investigation(inv_id: str):
+    """The saved Investigation; 202 {"status": "running"} while an async run is still going."""
+    store = _store(inv_id)
+    status = store.status()
+    if status == "running":
+        return JSONResponse(status_code=202, content={"id": inv_id, "status": "running"})
+    if status == "failed":
+        detail = store.events()[-1].get("detail", "")
+        raise HTTPException(500, f"Investigation {inv_id} failed: {detail}")
+    return store.load_investigation()
+
+
+def _store(inv_id: str) -> RunStore:
+    """RunStore for an existing run folder, else 404."""
+    try:
+        store = RunStore(inv_id)
+    except ValueError:
+        raise HTTPException(404, "investigation not found")
+    if store.status() is None:
+        raise HTTPException(404, "investigation not found")
+    return store
+
+
+@app.get("/api/investigations/{inv_id}/events")
+def investigation_events(inv_id: str, last_event_id: Optional[str] = Header(default=None)) -> StreamingResponse:
+    """Server-sent events: the run's real pipeline events, in order, as they are written (§14)."""
+    store = _store(inv_id)
+    after = int(last_event_id) if last_event_id and last_event_id.isdigit() else -1
+    return StreamingResponse(live_events.stream(store, after), media_type="text/event-stream", headers=SSE_HEADERS)
+
+
+class RerunRequest(BaseModel):
+    caption: str
+    posted_at: Optional[str] = None     # "2026-11-19" or ISO datetime; default now
+
+
+@app.post("/api/investigations/{inv_id}/rerun", response_model=Investigation)
+def rerun_investigation(inv_id: str, body: RerunRequest = Body(...),
+                        run_async: bool = Query(default=False, alias="async")):
+    """Same stored files, new caption: re-run claims + caption-dependent witnesses, re-use the rest.
+    Saved as a new investigation with parent_id = inv_id."""
+    status = _store(inv_id).status()
+    if status != "done":
+        raise HTTPException(409, f"Investigation {inv_id} is {status}; re-run it once it has finished.")
+    if not body.caption.strip():
+        raise HTTPException(422, "The new caption is empty.")
+    try:
+        posted = parse_posted_at(body.posted_at)
+    except ValueError:
+        raise HTTPException(422, "The 'Shared on' date must be a date like 2026-11-19.")
+    make = lambda: prepare_rerun(inv_id, body.caption, posted)  # noqa: E731
+    if run_async:
+        return _start_async(make)
+    try:
+        p = make()
+    except ValueError as exc:   # e.g. a stored original no longer matches its hash
+        raise HTTPException(409, f"Cannot re-run {inv_id}: {exc}")
+    try:
+        return execute(p)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(500, f"The re-run could not be completed: {type(exc).__name__}: {exc}")
+
+
+@app.get("/api/live/feed")
+def live_feed_stream(limit: Optional[int] = Query(default=None, ge=1)) -> StreamingResponse:
+    """Server-sent events announcing every new investigation (investigation_started / _done / _failed).
+    `limit` closes the stream after that many messages (for scripts and tests)."""
+    return StreamingResponse(live_feed.stream(limit), media_type="text/event-stream", headers=SSE_HEADERS)
 
 
 @app.get("/api/fixture", response_model=Investigation)

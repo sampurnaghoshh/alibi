@@ -64,11 +64,24 @@ class ReturnsNothing(Witness):
 
 def test_crash_becomes_inconclusive(ctx):
     events = []
-    [f] = run_witnesses(ctx, [Crashing()], log=lambda e, d: events.append((e, d)))
+    [f] = run_witnesses(ctx, [Crashing()], log=lambda e, d, data=None: events.append((e, d)))
     assert (f.status, f.reliability) == ("inconclusive", "low")
     assert "RuntimeError: boom" in f.limitations[0]
     assert f.alternatives
-    assert events[0][0] == "witness_failed"
+    assert [e for e, _ in events] == ["witness_started", "witness_failed"]
+
+
+def test_events_logged_in_real_completion_order(ctx):
+    """The live stream must show a fast witness finishing before a slow one listed earlier."""
+    events = []
+    slow = Slow()
+    slow.run = lambda c: (time.sleep(0.4), slow.placeholder())[1]
+    findings = run_witnesses(ctx, [slow, Fast()], log=lambda e, d, data=None: events.append((e, data)))
+    done = [data["witness"] for e, data in events if e == "witness_completed"]
+    assert done == ["ela", "lipsync"]                                   # real order
+    assert [f.witness for f in findings] == ["lipsync", "ela"]          # result keeps display order
+    completed = next(data for e, data in events if e == "witness_completed")
+    assert completed["findings"][0]["witness"] == "ela" and completed["elapsed_ms"] >= 0
 
 
 def test_timeout_becomes_inconclusive(ctx):

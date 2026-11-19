@@ -45,6 +45,15 @@ CORS_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"]
 MAX_UPLOAD_FILES = 5
 MAX_UPLOAD_BYTES = 200 * 1024 * 1024        # per file
 
+# Live Desk (§14). Caption re-runs (POST /api/investigations/{id}/rerun) repeat the witnesses whose
+# result depends on the caption's claims and re-use the rest from the original run.
+RERUN_CAPTION_DEPENDENT = ("metadata", "weather", "prior_appearance")
+RERUN_REUSED = ("ela", "lipsync", "enf")
+LIVE_BACKGROUND_WORKERS = 2          # async investigations running at once
+LIVE_SSE_POLL_S = 0.2                # how often the event stream checks history.jsonl for new lines
+LIVE_SSE_KEEPALIVE_S = 15.0
+LIVE_SSE_MAX_S = 600.0               # an event stream closes after this long
+
 # Demo presets (POST /api/demo/{case}): cases are read from this file; file paths in it are
 # relative to the repo root and must stay inside demo/.
 DEMO_CAPTIONS = REPO_ROOT / "demo" / "captions.md"
