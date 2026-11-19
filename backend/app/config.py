@@ -255,7 +255,9 @@ LIPSYNC_CONTRA_MAX_CORR = 0.10       # ... or corr < this ...
 LIPSYNC_CONTRA_MAX_PROMINENCE = -1.0 # ... or prominence < this -> contradiction (placeholder: off until calibrated)
 
 # ENF power-grid hum (§6.6). Conditional on the hour-1 go/no-go test.
-ENF_GO = False                       # set True ONLY if 50/100 Hz was found in >= 3 of 5 venue clips
+ENF_GO = False                       # set True ONLY if 50/100 Hz was found in >= 3 of 5 venue clips.
+                                     # Hour-1 test (scripts/test_enf.py): NO-GO, hum in 0 of 5 iPhone clips ->
+                                     # ENF is display-only: always insufficient_signal (low), never a verdict
 ENF_STFT_WINDOW_S = (4.0, 8.0)       # shorter end for short clips
 ENF_PEAK_HALF_WIDTH_HZ = 0.5         # signal band: f +/- 0.5 Hz
 ENF_NOISE_BAND_HZ = 5.0              # compared against a 5 Hz band around f
@@ -263,6 +265,15 @@ ENF_MIN_SNR_DB = 6.0
 ENF_MIN_FRAME_FRACTION = 0.60        # detected if SNR >= 6 dB in >= 60% of frames
 ENF_FREQS_50HZ = (50.0, 100.0)
 ENF_FREQS_60HZ = (60.0, 120.0)
+ENF_SHORT_CLIP_MIN_WIN_S = 2.0       # STFT window never below 2 s (0.5 Hz bins); shorter audio -> insufficient_signal
+ENF_MAX_SPAN_S = 12.0                # analyse only the first 12 s of audio (speed); limitation added when it cuts
+ENF_MAX_INPUTS = 2                   # analyse at most 2 audio/video inputs per investigation
+# Used only if ENF_GO is True (§6.6): 50/100 Hz + claim in these countries -> consistent; 60/120 Hz + claim in a
+# country NOT on a 60 Hz or mixed grid -> contradiction. ISO 3166-1 alpha-2.
+ENF_CONSISTENT_COUNTRIES = ("IN",)
+ENF_60HZ_COUNTRIES = ("US", "CA", "MX", "KR", "TW", "PH", "SA", "CO", "VE", "PE", "EC", "CR", "PA", "GT",
+                      "HN", "NI", "SV", "DO", "CU", "PR", "BS", "BZ", "LR", "FM", "GU", "AS")
+ENF_MIXED_GRID_COUNTRIES = ("JP", "BR")   # both 50 and 60 Hz in use: never a contradiction
 
 
 # =============================================================================
