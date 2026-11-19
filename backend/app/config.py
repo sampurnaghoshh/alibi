@@ -54,6 +54,21 @@ LIVE_SSE_POLL_S = 0.2                # how often the event stream checks history
 LIVE_SSE_KEEPALIVE_S = 15.0
 LIVE_SSE_MAX_S = 600.0               # an event stream closes after this long
 
+# Telegram bot (§14 step 2, app/bot/). All secrets come from backend/.env; never log the token.
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+TELEGRAM_ALLOWED_CHAT_IDS = {
+    int(x) for x in os.getenv("TELEGRAM_ALLOWED_CHAT_IDS", "").replace(" ", "").split(",") if x.lstrip("-").isdigit()
+}
+TELEGRAM_PASSCODE = os.getenv("TELEGRAM_PASSCODE", "").strip()      # "/start <passcode>" approves a chat
+TELEGRAM_API_BASE = os.getenv("TELEGRAM_API_BASE", "https://api.telegram.org").rstrip("/")
+TELEGRAM_MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024    # Bot API getFile limit
+TELEGRAM_POLL_TIMEOUT_S = 30                       # long polling
+BOT_WORKERS = 4                                    # messages handled at once
+BOT_STATE_FILE = DATA_DIR / "bot_chats.json"       # approved chats + which message belongs to which run (gitignored)
+# 127.0.0.1 rather than "localhost": on Windows, "localhost" tries IPv6 ::1 first and every new
+# connection to uvicorn (which listens on 127.0.0.1) waits ~2 s before falling back.
+ALIBI_API_URL = os.getenv("ALIBI_API_URL", "http://127.0.0.1:8000").rstrip("/")
+
 # Demo presets (POST /api/demo/{case}): cases are read from this file; file paths in it are
 # relative to the repo root and must stay inside demo/.
 DEMO_CAPTIONS = REPO_ROOT / "demo" / "captions.md"

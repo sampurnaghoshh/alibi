@@ -589,7 +589,25 @@ A live, end-to-end show of the whole system during the pitch, built on the same 
 
   Keepalive comments are sent every 15 s; `?limit=N` closes the stream after N messages. The feed is in-process, so **run uvicorn with one worker**.
 
+### Step 2: Telegram bot (done): `backend/app/bot/`, run `python -m app.bot`
+- **Setup and connection:** long polling over `httpx` (no new dependency, no public URL). The bot talks to `ALIBI_API_URL` (default `http://127.0.0.1:8000`). Setup is in README "Telegram bot".
+- **Files:**
+  - `telegram.py`: Bot API client, with retries for network errors, 429 and 5xx.
+  - `api.py`: ALIBI client, with friendly errors and SSE reading.
+  - `handler.py`: the flow.
+  - `texts.py`: every user-facing string, in §9 vocabulary.
+  - `state.py`: `data/bot_chats.json`.
+- **Flow:**
+  1. A document/video/photo with a caption gets "📥 Received", then the claims, extracted locally from the caption.
+  2. If Telegram compressed the media (sent as video or photo), the bot warns that the capture date/GPS was removed.
+  3. Files over 20 MB get a polite request for a shorter clip.
+  4. The bot downloads the file, sends `POST ?async=true` with `posted_at` set to the message time, and edits **one** progress message from the real event stream: ✓ done, ⚠ contradiction, – not applicable, ? failed.
+  5. It sends the result (headline, counts, each contradiction's title and summary, the human-review line), then `alibi_report_<id>.html`.
+  6. **Replying to the result (or the report) with new text** calls `/rerun` with that caption, and the result is marked "🔁 Same file, new story: …".
+- **Access:** only chats in `TELEGRAM_ALLOWED_CHAT_IDS`, or chats approved with `/start <TELEGRAM_PASSCODE>`. Everything else is silently ignored.
+- **Safety:** one bad update never stops the loop. The token is never logged: httpx request logging is off, every log line passes through a redacting formatter, and errors are re-raised without the URL.
+- **Tests:** `tests/test_bot.py`, with Telegram and ALIBI mocked via `httpx.MockTransport`.
+
 ### Next steps
-- Step 2: Telegram bot (`backend/app/bot/`).
 - Step 3: Live Desk page (`frontend/app/live/`).
 - Step 4: Sarvam briefing.

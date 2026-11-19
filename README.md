@@ -89,6 +89,29 @@ Run a single witness on its own (example):
 python -m app.witnesses.weather --caption "Massive flooding in Chennai yesterday evening" --posted-at 2026-11-19
 ```
 
+### Telegram bot (Live Desk)
+
+Judges send a clip to a Telegram bot. They get the claims at once, live progress, then the result and a printable report. Replying to the result with a new caption re-checks the same file. It's free: long polling, no public URL or tunnel needed.
+
+1. **Create the bot:** in Telegram, talk to **@BotFather** → `/newbot` → copy the token.
+2. **Configure** `backend/.env` (see `.env.example`):
+   ```
+   TELEGRAM_BOT_TOKEN=<token from BotFather>
+   TELEGRAM_ALLOWED_CHAT_IDS=<your chat id>      # optional, comma-separated
+   TELEGRAM_PASSCODE=<a word only the team knows>
+   ```
+   Only allowed chats are served. Any other chat can join by sending `/start <passcode>` (stored in `data/bot_chats.json`, gitignored). Everything else is ignored.
+3. **Run it next to the API**, as a second process, in two terminals:
+   ```powershell
+   cd backend; .\.venv\Scripts\Activate.ps1; uvicorn app.main:app --port 8000
+   cd backend; .\.venv\Scripts\Activate.ps1; python -m app.bot
+   ```
+   The bot talks to `ALIBI_API_URL` (default `http://127.0.0.1:8000`; `localhost` adds ~2 s per connection on Windows). It never prints or logs the token.
+
+**How judges should send a clip:** record 5–8 s in 1080p, then tap 📎 → **File** (not Gallery/Video) and put the claim in the caption, e.g. "Heavy rain in Bengaluru this afternoon".
+- A normal video upload makes Telegram strip the capture date and GPS. The bot warns about that, and metadata comes out inconclusive.
+- Bots can't download files over 20 MB, so a long 4K clip gets a polite "send a shorter clip".
+
 ## Frontend
 
 ```powershell
