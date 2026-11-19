@@ -23,7 +23,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
+
+# Quieten MediaPipe's glog output; must be set before mediapipe is imported. Note: mediapipe 1.2.3 logs via
+# absl and ignores it, so ~4 info/warning lines still print once per FaceLandmarker (not per frame).
+os.environ["GLOG_minloglevel"] = "2"
 import time
 from dataclasses import asdict
 from pathlib import Path

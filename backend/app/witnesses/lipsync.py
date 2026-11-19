@@ -37,18 +37,28 @@ Run alone (from backend/):
 
 from __future__ import annotations
 
-import json
-import shutil
-import subprocess
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, Optional
+import os
 
-import numpy as np
+# Quieten MediaPipe's glog output; must be set before mediapipe is imported. Note: mediapipe 1.2.3 logs via
+# absl and ignores it, so ~4 info/warning lines still print once per FaceLandmarker (not per frame).
+os.environ["GLOG_minloglevel"] = "2"
 
-from app import config
-from app.schemas import Finding
-from app.witnesses.base import InvestigationContext, Witness, run_cli
+import json  # noqa: E402
+import shutil  # noqa: E402
+import subprocess  # noqa: E402
+from contextlib import closing  # noqa: E402
+from dataclasses import dataclass, field  # noqa: E402
+from pathlib import Path  # noqa: E402
+from typing import Any, Optional  # noqa: E402
+
+import numpy as np  # noqa: E402
+
+from app import config  # noqa: E402
+from app.schemas import Finding  # noqa: E402
+from app.witnesses.base import InvestigationContext, Witness, run_cli  # noqa: E402
+
+LAG_SIGN = "positive = audio after mouth"
+NO_FACE_EARLY = "no face detected in the opening seconds"
 
 # MediaPipe face-mesh landmark indices.
 UPPER_INNER_LIP, LOWER_INNER_LIP = 13, 14
@@ -127,8 +137,8 @@ def _analysis_size(probe: MediaProbe, width: int) -> tuple[int, int]:
     return max(2, int(round(w * scale / 2)) * 2), max(2, int(round(h * scale / 2)) * 2)
 
 
-def iter_frames(path: Path, probe: MediaProbe, fps: float, width: int):
-    """Yield upright RGB frames (H, W, 3) at a constant `fps`, `width` px wide.
+def iter_frames(path: Path, probe: MediaProbe, fps: float, width: int, max_s: Optional[float] = None):
+    """Yield upright RGB frames (H, W, 3) at a constant `fps`, `width` px wide, from the first `max_s` seconds.
 
     ffmpeg resamples to `fps` and scales while decoding, so Python never sees full-size 4K frames, and
     it decodes in its own process while MediaPipe consumes the pipe (the two overlap).
@@ -136,8 +146,9 @@ def iter_frames(path: Path, probe: MediaProbe, fps: float, width: int):
     runs before our filters), so portrait iPhone clips come out upright, not sideways.
     """
     w, h = _analysis_size(probe, width)
+    span = ["-t", f"{max_s:g}"] if max_s else []          # output option: ffmpeg stops decoding at max_s
     cmd = [
-        "ffmpeg", "-v", "error", "-i", str(path), "-an",
+        "ffmpeg", "-v", "error", "-i", str(path), "-an", *span,
         "-vf", f"fps={fps},scale={w}:{h}",
         "-pix_fmt", "rgb24", "-f", "rawvideo", "-",
     ]
@@ -182,6 +193,7 @@ class MouthSeries:
     first_face_frame: Optional[np.ndarray] = None    # one upright frame with its mouth landmarks,
     first_face_points: Optional[np.ndarray] = None   # kept for the calibration plot (orientation check)
     face_height: Optional[np.ndarray] = None   # forehead-chin distance / frame height per frame, NaN = no face
+    stopped_early: bool = False                # True: no face in the first LIPSYNC_FACE_PROBE_S, decoding stopped
 
     def median_face_height(self) -> Optional[float]:
         """Median face height (fraction of frame height) over frames where a face was found."""
@@ -245,8 +257,13 @@ def _nan_medfilt(x: np.ndarray, k: int) -> np.ndarray:
 
 
 def mouth_series(path: Path, probe: MediaProbe, fps: Optional[float] = None,
-                 width: Optional[int] = None, model_path: Optional[Path] = None) -> MouthSeries:
-    """Mouth aperture per frame. Defaults are read from config at call time (tests can monkeypatch)."""
+                 width: Optional[int] = None, model_path: Optional[Path] = None,
+                 max_s: Optional[float] = None) -> MouthSeries:
+    """Mouth aperture per frame over the first `max_s` seconds. Defaults are read from config at call time.
+
+    Early exit: if no face is found in any frame of the first LIPSYNC_FACE_PROBE_S seconds, decoding stops
+    there and the series comes back with stopped_early=True (no-face clips cost ~1-2 s, not the full decode).
+    """
     import mediapipe as mp  # noqa: PLC0415
 
     fps = fps or config.LIPSYNC_ANALYSIS_FPS
@@ -256,8 +273,11 @@ def mouth_series(path: Path, probe: MediaProbe, fps: Optional[float] = None,
     raw: list[float] = []
     heights: list[float] = []
     first_frame, first_pts = None, None
-    with _landmarker(model_path) as lm:
-        for i, frame in enumerate(iter_frames(path, probe, fps, width)):
+    probe_frames = max(1, int(round(config.LIPSYNC_FACE_PROBE_S * fps)))
+    stopped_early = False
+    # closing(): stopping early (or any error) closes the generator, which kills ffmpeg.
+    with _landmarker(model_path) as lm, closing(iter_frames(path, probe, fps, width, max_s)) as frames:
+        for i, frame in enumerate(frames):
             image = mp.Image(image_format=mp.ImageFormat.SRGB, data=np.ascontiguousarray(frame))
             res = lm.detect_for_video(image, int(round(i * 1000.0 / fps)))
             if res.face_landmarks:
@@ -271,6 +291,9 @@ def mouth_series(path: Path, probe: MediaProbe, fps: Optional[float] = None,
             else:
                 raw.append(float("nan"))
                 heights.append(float("nan"))
+            if i + 1 == probe_frames and np.all(np.isnan(raw)):
+                stopped_early = True                   # no face in the opening seconds: stop decoding now
+                break
     raw_arr = np.array(raw, dtype=float)
     smooth = _nan_medfilt(_fill_short_gaps(raw_arr, config.LIPSYNC_MAX_GAP_FRAMES), config.LIPSYNC_SMOOTH_FRAMES)
     return MouthSeries(
@@ -282,6 +305,7 @@ def mouth_series(path: Path, probe: MediaProbe, fps: Optional[float] = None,
         first_face_frame=first_frame,
         first_face_points=first_pts,
         face_height=np.array(heights, dtype=float),
+        stopped_early=stopped_early,
     )
 
 
@@ -298,11 +322,12 @@ def mouth_features(mouth: np.ndarray) -> dict[str, np.ndarray]:
 # 3-4. Audio loudness + speech mask
 # ---------------------------------------------------------------------------
 
-def load_audio(path: Path, sr: Optional[int] = None) -> np.ndarray:
-    """Mono float32 audio at `sr` via ffmpeg (handles AAC in .MOV/.mp4, no temp file)."""
+def load_audio(path: Path, sr: Optional[int] = None, max_s: Optional[float] = None) -> np.ndarray:
+    """Mono float32 audio at `sr` via ffmpeg (handles AAC in .MOV/.mp4, no temp file), first `max_s` seconds."""
     sr = sr or config.LIPSYNC_AUDIO_SR
+    span = ["-t", f"{max_s:g}"] if max_s else []
     out = subprocess.run(
-        ["ffmpeg", "-v", "error", "-i", str(path), "-vn", "-ac", "1", "-ar", str(sr), "-f", "s16le", "-"],
+        ["ffmpeg", "-v", "error", "-i", str(path), "-vn", *span, "-ac", "1", "-ar", str(sr), "-f", "s16le", "-"],
         capture_output=True, timeout=60, check=True,
     ).stdout
     return np.frombuffer(out, np.int16).astype(np.float32) / 32768.0
@@ -337,14 +362,14 @@ def frame_rms(y: np.ndarray, frame: int, hop: int) -> np.ndarray:
     return np.sqrt(energy / frame)
 
 
-def audio_loudness(path: Path, probe: MediaProbe, t: np.ndarray) -> np.ndarray:
+def audio_loudness(path: Path, probe: MediaProbe, t: np.ndarray, max_s: Optional[float] = None) -> np.ndarray:
     """Speech-band loudness (dB) sampled at the video frame times `t` (seconds from the first video frame).
 
     The audio track's start offset relative to the video track is applied, so a container-level
     offset doesn't show up as a lag.
     """
     sr = config.LIPSYNC_AUDIO_SR
-    db_t, db = loudness_db(load_audio(path, sr), sr)
+    db_t, db = loudness_db(load_audio(path, sr, max_s), sr)
     db_t = db_t + (probe.audio_start_s or 0.0) - probe.video_start_s
     return np.interp(t, db_t, db, left=config.LIPSYNC_DB_FLOOR, right=config.LIPSYNC_DB_FLOOR)
 
@@ -509,6 +534,12 @@ class ClipAnalysis:
     windows: list[dict] = field(default_factory=list)                # for config.LIPSYNC_MOUTH_FEATURE
     summary: dict[str, Any] = field(default_factory=dict)            # for config.LIPSYNC_MOUTH_FEATURE
     fps: float = 0.0
+    span_s: Optional[float] = None     # LIPSYNC_MAX_SPAN_S used for this run (None = whole clip)
+
+    @property
+    def truncated(self) -> bool:
+        """True when the span cap actually cut the clip (it is longer than the analysed span)."""
+        return self.span_s is not None and self.probe.duration_s > self.span_s + 0.05
 
 
 def analyze_clip(path: Path, fps: Optional[float] = None) -> ClipAnalysis:
@@ -516,11 +547,15 @@ def analyze_clip(path: Path, fps: Optional[float] = None) -> ClipAnalysis:
     fps = fps or config.LIPSYNC_ANALYSIS_FPS
     if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
         raise RuntimeError("ffmpeg/ffprobe not found on PATH")
+    span = config.LIPSYNC_MAX_SPAN_S or None
     probe = probe_media(path)
     if not probe.has_audio:
-        return ClipAnalysis(probe, None, None, None, fps=fps, summary=summarize(0.0, None, [], False))
-    ms = mouth_series(path, probe, fps)
-    audio = audio_loudness(path, probe, ms.t)
+        return ClipAnalysis(probe, None, None, None, fps=fps, summary=summarize(0.0, None, [], False), span_s=span)
+    ms = mouth_series(path, probe, fps, max_s=span)
+    if ms.stopped_early:
+        summary = {**summarize(0.0, None, [], True), "status": "not_applicable", "reason": NO_FACE_EARLY}
+        return ClipAnalysis(probe, ms, None, None, fps=fps, summary=summary, span_s=span)
+    audio = audio_loudness(path, probe, ms.t, max_s=span)
     speech, info = speech_mask(audio)
     face_fraction = float(ms.face_found.mean()) if len(ms.face_found) else 0.0
     feats = mouth_features(ms.mouth)
@@ -530,7 +565,7 @@ def analyze_clip(path: Path, fps: Optional[float] = None) -> ClipAnalysis:
     sync = syncs[chosen]
     windows = window_sync(feats[chosen], audio, speech, fps, sync["lag_s"] if sync else None) if ok else []
     return ClipAnalysis(probe, ms, audio, speech, info, syncs, windows,
-                        summarize(face_fraction, sync, windows, True, ms.median_face_height()), fps)
+                        summarize(face_fraction, sync, windows, True, ms.median_face_height()), fps, span)
 
 
 # ---------------------------------------------------------------------------
@@ -599,6 +634,7 @@ def write_series(path: Path, a: ClipAnalysis) -> None:
         "window_start_s": [w["start_s"] for w in a.windows],
         "window_end_s": [w["end_s"] for w in a.windows],
         "clip_lag_s": sync["lag_s"] if sync else None,
+        "lag_sign": LAG_SIGN,
         "lag_curve": {"lags_s": sync["lags_s"], "corr": sync["curve"]} if sync else None,
     }
     path.write_text(json.dumps(data), encoding="utf-8")
@@ -638,6 +674,7 @@ class LipsyncWitness(Witness):
             "rule_reason": s["reason"],
             "mouth_feature": feat,
             "lag_s": s["lag_s"],
+            "lag_sign": LAG_SIGN,
             "corr": s["corr"],
             "prominence": s["prominence"],
             "corr_at_zero_lag": sync["corr_at_zero"] if sync else None,
@@ -646,6 +683,9 @@ class LipsyncWitness(Witness):
             "speech_windows": sum(w["is_speech"] for w in a.windows),
             "analysis_fps": a.fps,
             "rotation_deg": a.probe.rotation,
+            "clip_duration_s": round(a.probe.duration_s, 2),
+            # seconds actually decoded: the span cap, or ~LIPSYNC_FACE_PROBE_S after a no-face early exit
+            "analysed_s": round(len(a.mouth.t) / a.fps, 2) if a.mouth is not None and a.fps else 0.0,
             "lag_search_s": config.LIPSYNC_MAX_LAG_S,
             "contradiction_allowed": config.LIPSYNC_ALLOW_CONTRADICTION,
             "thresholds": {
@@ -658,14 +698,20 @@ class LipsyncWitness(Witness):
             },
         }
         where = f" in {inp.name}" if total > 1 else ""
+        # Span cap: say so whenever the clip was actually cut.
+        cut = [f"Only the first {a.span_s:g} s of the clip were analysed"] if a.truncated else []
 
         if s["status"] == "not_applicable":
+            early = s["reason"] == NO_FACE_EARLY
             return self.finding(
                 n=n, status="not_applicable", reliability="low", details=details,
                 title=f"Lip-sync synchrony indicator not applicable{where}",
                 summary=f"Not analysed: {s['reason']}.",
                 alternatives=["The indicator needs a visible face and an audio track; it says nothing either way here"],
-                limitations=["Needs a face in at least half of the frames and an audio track"],
+                limitations=(
+                    [f"Only the first {config.LIPSYNC_FACE_PROBE_S:g} s were checked for a face; "
+                     "a face that appears later is not analysed"] if early
+                    else ["Needs a face in at least half of the frames and an audio track"] + cut),
             )
         # Face-size guard: a small face gives a few-pixel lip gap, too noisy to time against the audio.
         face_h = s.get("face_height")
@@ -680,7 +726,7 @@ class LipsyncWitness(Witness):
                         f"{config.LIPSYNC_MIN_FACE_HEIGHT:.0%}), so mouth movement cannot be timed reliably "
                         "against the audio. No synchrony conclusion is drawn.",
                 alternatives=ALTERNATIVES,
-                limitations=["face too small for a reliable synchrony measurement"] + BASE_LIMITATIONS,
+                limitations=["face too small for a reliable synchrony measurement"] + BASE_LIMITATIONS + cut,
             )
         if s["status"] == "insufficient_signal":
             return self.finding(
@@ -689,7 +735,7 @@ class LipsyncWitness(Witness):
                 summary=f"Not enough speech with a visible face to measure synchrony "
                         f"(face in {s['face_fraction']:.0%} of frames).",
                 alternatives=["Short, quiet or music-only audio gives no usable speech; this says nothing about the media"],
-                limitations=BASE_LIMITATIONS,
+                limitations=BASE_LIMITATIONS + cut,
             )
 
         # From here we have numbers: series artifact + evidence.
@@ -707,7 +753,7 @@ class LipsyncWitness(Witness):
                 summary=f"Across the speech, mouth movement tracks speech loudness ({nums}). "
                         "Synchrony indicator only; it requires human review.",
                 alternatives=ALTERNATIVES,
-                limitations=BASE_LIMITATIONS,
+                limitations=BASE_LIMITATIONS + cut,
             )
         if s["status"] == "contradiction" and calibrated:
             return self.finding(
@@ -717,7 +763,7 @@ class LipsyncWitness(Witness):
                 summary=f"No clear match between mouth movement and speech loudness near zero lag ({nums}). "
                         "Synchrony indicator only; it requires human review.",
                 alternatives=ALTERNATIVES,
-                limitations=BASE_LIMITATIONS,
+                limitations=BASE_LIMITATIONS + cut,
             )
         # Rule says inconclusive, or any rule result while the indicator is uncalibrated: weak / unclear.
         held_back = s["status"] in ("consistent", "contradiction")
@@ -733,7 +779,7 @@ class LipsyncWitness(Witness):
             alternatives=ALTERNATIVES,
             limitations=BASE_LIMITATIONS + (
                 ["Lip-sync is reported as inconclusive until recalibration (LIPSYNC_ALLOW_CONTRADICTION is off)"]
-                if held_back else []),
+                if held_back else []) + cut,
         )
 
     def _series(self, ctx: InvestigationContext, inp, n: int, a: ClipAnalysis) -> list[dict]:

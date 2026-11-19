@@ -164,6 +164,10 @@ LIPSYNC_MAX_RELIABILITY = "low"
 LIPSYNC_ALLOW_CONTRADICTION = False
 LIPSYNC_MIN_FACE_HEIGHT = 0.25       # STARTING VALUE: median face height (forehead-chin) / frame height below
                                      # this -> inconclusive/low "face too small for a reliable synchrony measurement"
+LIPSYNC_FACE_PROBE_S = 3.0           # early exit: no face in any frame of the first 3 s -> stop decoding,
+                                     # not_applicable "no face detected in the opening seconds" (live-demo speed)
+LIPSYNC_MAX_SPAN_S = 12.0            # analyse only the first 12 s (video + audio); measured ~9 s on 4K IMG_5383.
+                                     # A limitation is added whenever this actually cuts the clip. 0/None = whole clip
 LIPSYNC_MAX_INPUTS = 2               # analyse at most 2 videos per investigation (runner limit is 90 s; ~10-35 s each)
 LIPSYNC_MAX_LOCATIONS = 3            # worst windows (lowest corr at the clip lag) reported as timestamps
 LIPSYNC_MIN_FACE_FRACTION = 0.50     # face detected in >= 50% of sampled frames, else not_applicable
