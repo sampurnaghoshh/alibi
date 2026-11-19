@@ -41,7 +41,7 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "backend"))
 
 from app import config  # noqa: E402
-from app.media import media_kind, phash_hex, sample_fps_for, sample_frames, video_info  # noqa: E402
+from app.media import clip_duration, media_kind, phash_hex, sample_fps_for, sample_frames  # noqa: E402
 from app.storage import sha256_file  # noqa: E402
 
 REQUIRED = ("clip_id", "file", "title", "verified_date", "verified_location", "verified_by", "source_note")
@@ -72,10 +72,7 @@ def check_entry(entry: Any, base: Path, seen: set[str]) -> list[str]:
 
 def build_entry(entry: dict, base: Path, fps: float) -> dict:
     path = (base / entry["file"]).resolve()
-    duration = None
-    if media_kind(path) == "video":
-        vfps, count = video_info(path)
-        duration = round(count / vfps, 3) if count else None
+    duration = clip_duration(path)                  # shared with the witness: same file -> same rate
     clip_fps = sample_fps_for(duration, fps)        # short clips (< config.SHORT_CLIP_S) are sampled at 4 fps
     frames = sample_frames(path, clip_fps)
     if not frames:
