@@ -95,6 +95,24 @@ def test_page_uses_section9_status_vocabulary():
     assert re.search(r"s-insufficient_signal\s*\{[^}]*dashed", css)            # grey dashed (§9)
 
 
+def test_page_marks_unimplemented_witnesses_from_health():
+    js = (STATIC / "live.js").read_text(encoding="utf-8")
+    assert '"/api/health"' in js and "implemented === false" in js
+    assert "Not available in this build" in js
+    health = client.get("/api/health").json()
+    assert all("implemented" in w for w in health["witnesses"])
+
+
+def test_detail_panel_sections_and_drawer():
+    js = (STATIC / "live.js").read_text(encoding="utf-8")
+    for heading in ("What was checked", "Data retrieved", "What was found", "Why it contradicts the claim",
+                    "Why it supports the claim", "Alternatives & limitations", "Chain of custody", "SHA-256"):
+        assert heading in js, heading
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    for elem_id in ('id="drawer"', 'id="details-btn"', 'id="tl-lanes"', 'id="wa-main"'):
+        assert elem_id in html, elem_id
+
+
 @pytest.mark.skipif(not shutil.which("node"), reason="node not installed")
 def test_live_js_parses():
     for name in ("live.js", "vendor/lucide/icons.js"):

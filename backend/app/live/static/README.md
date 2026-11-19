@@ -5,7 +5,7 @@ Plain HTML + CSS + vanilla JS, no build step. Everything is local, so it works o
 
 | File | What |
 |---|---|
-| `index.html` | layout: idle screen, caption, witness tiles, graph, result / re-run / Time Machine panels, human-review banner |
+| `index.html` | layout: idle screen, caption, witness tiles + detail panel + execution timeline, graph, result / re-run / Time Machine panels, case details drawer, human-review banner |
 | `live.css` | case-file theme for the projector: the ALIBI design tokens (CLAUDE.md §9), §9 status colours |
 | `live.js` | listens to `/api/live/feed` and `/api/investigations/{id}/events` and draws what they say, as they say it |
 | `vendor/` | third-party libraries, vendored as files (no CDN) |
