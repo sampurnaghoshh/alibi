@@ -1,4 +1,4 @@
-# ALIBI backend, Python 3.11
+# ALIBI backend, Python 3.12
 # System tools also required on PATH: ffmpeg (ffprobe), exiftool
 
 # API
@@ -13,7 +13,7 @@ requests>=2.31
 dateparser>=1.2
 
 # Image / video
-opencv-python>=4.9
+opencv-contrib-python>=4.9   # superset of opencv-python; mediapipe needs contrib, and both together clash over cv2
 imagehash>=4.3
 Pillow>=10.0
 mediapipe>=0.10.14
@@ -26,7 +26,7 @@ numpy>=1.26
 
 # Optional runtime LLM providers (claim extraction + explanations only)
 anthropic>=0.40
-google-generativeai>=0.8
+google-genai>=1.0
 
 # Tests
 pytest>=8.0

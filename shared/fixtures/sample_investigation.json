@@ -156,7 +156,7 @@
       ],
       "locations": [],
       "alternatives": [
-        "Metadata is commonly stripped by messaging apps and social platforms, so its absence says nothing about authenticity"
+        "Metadata is commonly stripped by messaging apps and social platforms, so its absence is not evidence of manipulation"
       ],
       "limitations": [
         "Metadata can be edited or removed; it is supporting evidence, not ground truth"
@@ -273,7 +273,7 @@
     ]
   },
   "history": [
-    { "ts": "2026-11-19T10:15:00+05:30", "event": "file_received", "detail": "chennai_flood.mp4 sha256=3b7e9c1d…1a2b3c (stored read-only)" },
+    { "ts": "2026-11-19T10:15:00+05:30", "event": "file_received", "detail": "chennai_flood.mp4 sha256=3b7e9c1d2f4a6b8c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c stored read-only at originals/in_1_chennai_flood.mp4" },
     { "ts": "2026-11-19T10:15:01+05:30", "event": "claims_extracted", "detail": "3 claims via rules (location, time, weather_condition)" },
     { "ts": "2026-11-19T10:15:01+05:30", "event": "witness_completed", "detail": "metadata: inconclusive (240 ms)" },
     { "ts": "2026-11-19T10:15:02+05:30", "event": "witness_completed", "detail": "weather: contradiction (812 ms)" },

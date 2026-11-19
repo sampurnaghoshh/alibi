@@ -49,9 +49,9 @@ ALIBI treats each kind of evidence (caption text, metadata, weather records, ear
 
 | Person | AI tools | Owns | Files |
 |---|---|---|---|
-| **Sampurna** (lead) | Claude Code (Opus) in VS Code | Repo skeleton, **evidence contract**, **rule engine**, graph builder, FastAPI app, storage, report, integration, final merges | `backend/app/main.py`, `schemas.py`, `engine/*`, `storage.py`, `report.py`, `shared/*` |
-| **Nooman** | Claude Code (Opus) in VS Code | **Claim extraction** (LLM + rule fallback), **lip-sync witness**, **ENF audio witness** (conditional), calibration scripts | `backend/app/claims/*`, `witnesses/lipsync.py`, `witnesses/enf.py`, `scripts/calibrate_*.py` |
-| **Adithi** | Free LLMs | **Metadata witness**, **weather witness**, **prior-appearance witness**, ELA (only if time), archive builder | `witnesses/metadata.py`, `witnesses/weather.py`, `witnesses/prior_appearance.py`, `witnesses/ela.py`, `scripts/build_archive.py` |
+| **Sampurna** (lead) | Claude Code (Opus) in VS Code | Repo skeleton, **evidence contract**, **rule engine**, graph builder, FastAPI app, storage, report, integration, final merges, **claim extraction** + LLM client (taken over from Nooman), **ELA witness** and **archive builder** (taken over from Adithi) | `backend/app/main.py`, `schemas.py`, `engine/*`, `storage.py`, `report.py`, `pipeline.py`, `media.py`, `claims/*`, `shared/*`, `witnesses/ela.py`, `scripts/build_archive.py`, `scripts/warm_cache.py` |
+| **Nooman** | Claude Code (Opus) in VS Code | **Lip-sync witness**, **ENF audio witness** (conditional), calibration scripts | `witnesses/lipsync.py`, `witnesses/enf.py`, `scripts/calibrate_*.py`, `scripts/test_enf.py` |
+| **Adithi** | Free LLMs | **Metadata witness**, **weather witness**, **prior-appearance witness** | `witnesses/metadata.py`, `witnesses/weather.py`, `witnesses/prior_appearance.py` |
 | **Dhruva** | Free LLMs | **Entire frontend**: upload page, investigation dashboard, contradiction graph, witness cards, evidence drawer, report view, demo polish | `frontend/*` |
 
 **Rule:** don't edit files you don't own. Need a change elsewhere? Message the owner. Contract changes (`schemas.py`, `shared/contract.schema.json`, `shared/fixtures/*`) are made **only by Sampurna** and announced in the group.
@@ -93,7 +93,8 @@ Witness → family (fixed):
   "extracted_by": "llm"
 }
 ```
-- `normalized` for `time`: `{ "date": "2026-11-18", "start": "...ISO...", "end": "...ISO...", "precision": "day" }`. Relative dates ("yesterday") resolve against `posted_at`.
+- `normalized` for `time`: `{ "date": "2026-11-18", "start": "...ISO...", "end": "...ISO...", "precision": "day" }`. Relative dates ("yesterday") resolve against `posted_at`. `start`/`end` must include a timezone offset.
+  - `precision` is one of `hour | part_of_day | day | week | month | year`. Use `part_of_day` for "evening" / "morning" / "night" windows (e.g. "yesterday evening" → `start` 17:00, `end` 21:00, `precision: "part_of_day"`).
 - `normalized` for `weather_condition`/`event`: `{ "condition": "flood" }` from the set `flood | heavy_rain | rain | dry | storm | other`.
 - `extracted_by`: `"llm" | "rules"`.
 
@@ -137,7 +138,7 @@ Witness → family (fixed):
   "posted_at": "ISO (user-supplied 'when was this shared', default now)",
   "caption": "Massive flooding in Chennai yesterday evening, roads completely underwater",
   "inputs": [
-    { "file_id": "in_1", "name": "clip.mp4", "mime": "video/mp4", "size": 4821000, "sha256": "…", "duration_s": 14.2 }
+    { "file_id": "in_1", "name": "clip.mp4", "mime": "video/mp4", "size": 4821000, "sha256": "…", "duration_s": 14.2, "stored_path": "originals/in_1_clip.mp4" }
   ],
   "claims": [ "...Claim[]..." ],
   "findings": [ "...Finding[]..." ],
@@ -163,19 +164,46 @@ Witness → family (fixed):
 - Edge: `{ "id": "e1", "source": "f_weather_1", "target": "c1", "relation": "supports" | "contradicts" | "inconclusive" | "derived_from" }`
 - Inputs → claims use `derived_from`. Findings → claims use the relation that matches the finding status.
 
+### 4.6 Input fields and validation rules (enforced by `schemas.py`)
+- `inputs[].stored_path`: path of the read-only original, relative to the run folder. The frontend plays/shows files from `/api/files/{inv_id}/{stored_path}`. `duration_s` is `null` for images.
+- Unknown fields are rejected everywhere except inside `details`, graph `meta`, and location `normalized`.
+- `alternatives` and `limitations` must be non-empty.
+- `family` must match the witness (§4.1), and `reliability` may not exceed the witness's max in §5.
+- Each claim's `source.text` must equal `caption[start:end]`.
+- `claim_ids`, location `file_id`s, `weak_indicators` and graph edges must point at things that exist, and `assessment.counts` must match the findings.
+- After changing `schemas.py`, regenerate the JSON Schema: `cd backend; python -m app.schemas`. `pytest` fails if it is stale.
+
+### 4.7 InvestigationSummary (what `GET /api/investigations` returns, for the history page)
+A list, newest first. Fetch the full `Investigation` by `id` for anything else. In `contract.schema.json` it is under `$defs/InvestigationSummary`.
+```json
+[
+  {
+    "id": "inv_20261119_101500_ab12",
+    "created_at": "ISO",
+    "caption": "Massive flooding in Chennai yesterday evening, roads completely underwater",
+    "inputs": ["chennai_flood.mp4"],
+    "headline": "context_not_supported",
+    "headline_text": "The stated context is not supported by the available evidence",
+    "counts": { "consistent": 0, "contradiction": 2, "inconclusive": 2, "insufficient_signal": 1, "not_applicable": 1 },
+    "human_review": "priority"
+  }
+]
+```
+- `inputs` is the list of input file **names** (not full `InputFile` objects).
+
 ---
 
 ## 5. Final witness list (FROZEN)
 
 | # | Witness | Owner | Status | Max reliability |
 |---|---|---|---|---|
-| 1 | Claim extraction (not a witness, it feeds everything) | Nooman | **Must** | n/a |
+| 1 | Claim extraction (not a witness, it feeds everything) | Sampurna (from Nooman) | Done | n/a |
 | 2 | Metadata integrity | Adithi | **Must** | medium |
 | 3 | Weather (grid + 72 h) | Adithi | **Must** | medium |
 | 4 | Prior appearance (perceptual-hash archive) | Adithi | **Must** | high |
 | 5 | Lip-sync synchrony indicator | Nooman | **Must** | medium |
 | 6 | ENF power-grid hum | Nooman | **Conditional** on the hour-1 test | medium |
-| 7 | ELA heatmap | Adithi | Only if time | low (always) |
+| 7 | ELA heatmap | Sampurna (from Adithi) | Done | low (always) |
 | — | Solar/shadow analysis | — | **Roadmap slide only** | — |
 | — | Extra deepfake classifiers | — | **Skip** | — |
 
@@ -200,7 +228,15 @@ Every module ships with a `__main__` block so it can run alone:
 
 All thresholds below are **starting values. Calibrate them on genuine clips** and record the final values in `backend/app/config.py`.
 
-### 6.1 Claim extraction (Nooman): `app/claims/extract.py`
+### 6.1 Claim extraction (Sampurna, taken over from Nooman; done): `app/claims/extract.py`
+- **Done.** Rules path is fully offline: `gazetteer.json` (~250 places with coordinates and alternate spellings) means no geocoding call for known places. Also handles afternoon (12:00–17:00), "N days ago", "N hours ago" (precision `hour`), weekdays, "last week" (`week`), "Month YYYY" (`month`), "in YYYY" (`year`), and simple speaker patterns. The same place/condition/time mentioned twice is kept once (first mention). Times use `posted_at`'s timezone, IST if none.
+- LLM claims are added only where the rules found nothing; overlapping spans keep the rules version.
+- **Budget rule: we spend no money on APIs.**
+  - Default `ALIBI_LLM_PROVIDER=none` (rules + templates, free, offline). **The demo runs with `none`.**
+  - Recommended optional provider: `gemini` with a free Google AI Studio key from a project without billing (setup steps in README). Default model `gemini-2.5-flash-lite` (free tier), override with `ALIBI_LLM_MODEL`.
+  - `anthropic` is **paid: do not use**. The code still supports it, but it is never the default and never called automatically.
+  - One call to the configured model, 15 s timeout, no retries, **no fallback models**. On any refusal, error or rate limit: rules only.
+  - LLM rewording of findings (§7.6) is off by default (`ALIBI_LLM_EXPLAIN=0`) to save free-tier quota.
 - Input: caption, posted_at. Output: `list[Claim]`.
 - **LLM path:** provider-agnostic client in `app/claims/llm.py`, chosen by env vars `ALIBI_LLM_PROVIDER` (`anthropic` | `gemini` | `none`), `ALIBI_LLM_MODEL`, and the API key. Ask for strict JSON: claims with `type`, `value`, `source_text`. **Compute `start/end` yourself** with `caption.find(source_text)` and drop the claim if it isn't found.
 - **Rules fallback (must work offline, used when provider = none or the LLM fails):**
@@ -235,9 +271,10 @@ All thresholds below are **starting values. Calibrate them on genuine clips** an
 - Always list as alternatives: upstream/catchment rain, drainage failure, reservoir release, and localised rain below grid resolution.
 - Cache responses to `data/cache/` so the demo works offline once warmed up.
 
-### 6.4 Prior appearance (Adithi): `witnesses/prior_appearance.py` + `scripts/build_archive.py`
+### 6.4 Prior appearance (witness: Adithi, `witnesses/prior_appearance.py`; archive builder: Sampurna, `scripts/build_archive.py`)
 - Archive: `data/archive/archive.json` plus the source clips. Each entry: `{ "clip_id", "title", "verified_date", "verified_location", "verified_by", "source_note", "frame_hashes": [hex...] }`.
-- `build_archive.py`: for each clip, sample 1 frame/s (OpenCV), compute `imagehash.phash` (64-bit), store the hashes.
+- `build_archive.py` (done): reads the hand-edited `data/archive/manifest.json` (format in the script's docstring; clip paths are relative to `data/archive/`), samples 1 frame/s, computes `imagehash.phash` (64-bit, 16 hex chars), and writes `archive.json` as `{ "built_at", "sample_fps", "hash", "clips": [entry, ...] }`. Each entry also has `frame_times_s` (same order as `frame_hashes`), `sha256`, `duration_s`, `sample_fps`, and optional `verified_lat`/`verified_lon` for distance checks. Run: `backend\.venv\Scripts\python.exe scripts\build_archive.py`.
+- **Use `app/media.py` in the witness:** `sample_frames(path, config.PRIOR_SAMPLE_FPS)` → `[(t, image)]`, `phash_hex(image)`, `hamming(a, b)`. The archive was built with the same functions, so hashes are comparable.
 - Witness: sample the uploaded video the same way (images = 1 frame). A frame matches when Hamming distance ≤ 8. A clip matches when ≥ 3 frames, or ≥ 30% of sampled frames, match the same archive entry.
 - Rules:
   - Match **and** the verified date or location disagrees with the claim → `contradiction` (**high**). Title: "Frames match a clip verified as recorded in {place} on {date}".
@@ -268,7 +305,7 @@ All thresholds below are **starting values. Calibrate them on genuine clips** an
 - Artifact: spectrogram PNG zoomed to 40–130 Hz with the hum line marked.
 - Alternatives: phone noise suppression removes hum; outdoor or battery-only environments have none; imported equipment.
 
-### 6.7 ELA (Adithi, only if time): `witnesses/ela.py`
+### 6.7 ELA (Sampurna, taken over from Adithi; done): `witnesses/ela.py`
 - Images, or a video keyframe. Re-save as JPEG q=90, take the absolute difference ×15 → heatmap PNG artifact.
 - **Always `inconclusive`, reliability `low`**, listed under `weak_indicators`. ELA is a visual aid, not a verdict.
 
@@ -286,14 +323,17 @@ Transparent, deterministic, explainable. **No averaging.**
    - Else `not_applicable`.
    - Low-reliability contradictions go to `weak_indicators` and never set a family status.
    - Several contradictions in one family count **once** for the headline (they aren't independent), but every finding is still shown on its own.
+   - A family whose only finding is a low-reliability contradiction is `inconclusive` (a witness spoke, but too weakly to count), never `contradiction`.
+   - `weak_indicators` = all low-reliability contradictions **plus** every ELA finding (§6.7).
 3. **Headline:**
    - `context_not_supported` / `signals_inconsistent`: ≥ 1 high-reliability contradiction, **or** contradictions in ≥ 2 families. Pick the text by which family contradicts (context → "The stated context is not supported by the available evidence"; signal → "Audio-visual signals show inconsistencies").
-   - `partially_supported`: exactly 1 family with a medium contradiction and nothing high.
-   - `consistent_so_far`: ≥ 2 families consistent and no contradictions. Text: "No contradictions found in the available evidence". Never "authentic".
-   - `insufficient_evidence`: everything else.
+   - `partially_supported`: exactly 1 family with a medium contradiction and nothing high. Text by family: context → "Part of the available evidence does not support the stated context"; signal → "One audio-visual signal shows a possible inconsistency".
+   - `consistent_so_far`: ≥ 2 families consistent and no contradictions (not even low ones). Text: "No contradictions found in the available evidence". Never "authentic".
+   - `insufficient_evidence`: everything else. Text: "Not enough evidence to support or contradict the stated context".
+   - All texts live in `config.py` (`HEADLINE_TEXT`, `PARTIAL_HEADLINE_TEXT`).
 4. **human_review:** always present. `priority` if there's any contradiction, else `standard`. The UI always shows "Human review required. This is an evidence report, not a verdict."
-5. **experimental_score** (optional, small, never the headline): start at 100, −30 per high contradiction, −15 per medium, −5 per low, −3 per inconclusive, floor 0. Always shown with its label.
-6. **Explanations:** after the rules run, the LLM may rewrite `title`/`summary` into plain English, **given only the finding JSON**, and it must not change status or numbers. If the LLM is off, use template strings.
+5. **experimental_score** (optional, small, never the headline): start at 100, −30 per high contradiction, −15 per medium, −5 per low, −3 per inconclusive, floor 0. `insufficient_signal` and `not_applicable` cost 0 (absence of evidence is not evidence). Always shown with its label.
+6. **Explanations:** after the rules run, the LLM may rewrite `title`/`summary` into plain English, **given only the finding JSON**, and it must not change status or numbers. If the LLM is off, use template strings. (`app/engine/explain.py`: a rewrite is rejected unless it keeps exactly the same numbers and has no forbidden words. Witnesses may omit `title`/`summary` in `self.finding(...)` to get the template.)
 
 `app/engine/graph.py` builds nodes and edges from claims and findings (§4.5).
 
@@ -330,7 +370,7 @@ alibi/
 └── demo/                        # case_a/, case_b/, controls/ + captions.md
 ```
 
-**Backend:** Python 3.11, FastAPI, uvicorn, pydantic v2, opencv-python, imagehash, Pillow, librosa, soundfile, scipy, numpy, mediapipe, requests, dateparser, python-multipart. System tools: `ffmpeg`, `exiftool`.
+**Backend:** Python 3.12 (`py -3.12` on Windows), FastAPI, uvicorn, pydantic v2, opencv-python, imagehash, Pillow, librosa, soundfile, scipy, numpy, mediapipe, requests, dateparser, python-multipart. System tools: `ffmpeg`, `exiftool`.
 
 **Frontend:** Next.js + TypeScript + Tailwind, `@xyflow/react` (graph), `recharts` (lip-sync and weather charts), `wavesurfer.js` (audio + spectrogram), `react-leaflet` (weather grid map), `framer-motion` (staggered reveal).
 
@@ -339,17 +379,31 @@ alibi/
 |---|---|---|
 | POST | `/api/investigations` | multipart: `files[]`, `caption`, `posted_at` → runs synchronously, returns `Investigation` |
 | GET | `/api/investigations/{id}` | fetch a saved investigation |
+| GET | `/api/fixture` | the Case A sample investigation (`shared/fixtures/sample_investigation.json`) for frontend work |
+| GET | `/api/demo` | preset cases from `demo/captions.md` (for the Case A / Case B buttons) |
+| POST | `/api/demo/{case_name}` | run a preset case (its files, caption, posted_at) with no file picking → `Investigation` |
 | GET | `/api/investigations` | list past runs (history page) |
 | GET | `/api/files/{inv_id}/{path}` | serve originals (read-only) and artifacts |
 | GET | `/api/investigations/{id}/report` | printable HTML report (browser → Save as PDF) |
 | GET | `/api/health` | witness availability (ffmpeg/exiftool found? LLM configured?) |
 
+**For Dhruva: demo buttons.** `GET /api/demo` returns `[{ "name", "caption", "posted_at", "files", "expect", "ready", "problem" }]`, e.g. `{"name": "case_a", ..., "ready": false, "problem": "The demo file 'demo/case_a/clip.mp4' does not exist yet. ..."}`. Enable a button only when `ready` is true, and show `problem` as its tooltip otherwise. Clicking runs `POST /api/demo/case_a` (no body) and returns a normal `Investigation`, so navigate to `/investigation/{id}` as after an upload. A case that isn't ready returns **404** with the reason in `detail`.
+
+**Upload rules** (`POST /api/investigations`; errors come back as `{"detail": "<friendly message>"}`, so show `detail` to the user):
+- At most **5 files**, each at most **200 MB**, none empty → otherwise **422** (count / empty) or **413** (too large).
+- Only images, video and audio, checked from the file's actual bytes, not its extension → otherwise **415**. Supported: JPEG, PNG, WebP, GIF, BMP, TIFF, HEIC/AVIF, MP4/MOV/3GP, WebM/MKV, AVI, MP3, WAV, M4A/AAC, OGG/Opus, FLAC, AMR. The stored `inputs[].mime` is the detected type.
+- If any file is rejected, nothing is stored. A file that passes but is corrupt still returns **200**, with inconclusive findings that explain the error.
+- A bad "Shared on" date, or no file and no caption → **422**.
+
 Synchronous is fine for the demo (target < 20 s for a 15 s clip). The frontend **reveals findings one by one** with a staggered animation for the demo effect.
 
 ### Run commands
-```bash
+Windows / PowerShell (see README.md for full setup). macOS/Linux: use `python3.12 -m venv .venv` and `source .venv/bin/activate`.
+```powershell
 # backend
-cd backend && python -m venv .venv && source .venv/bin/activate
+cd backend
+py -3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 pytest -q
@@ -361,12 +415,13 @@ cd frontend && npm install && npm run dev   # http://localhost:3000
 
 ### Environment (`backend/.env`, never commit)
 ```
-ALIBI_LLM_PROVIDER=none        # anthropic | gemini | none
-ALIBI_LLM_MODEL=
-ANTHROPIC_API_KEY=
+ALIBI_LLM_PROVIDER=none        # none (default, demo) | gemini (free AI Studio key) | anthropic (paid, do not use)
+ALIBI_LLM_MODEL=               # empty = gemini-2.5-flash-lite
 GEMINI_API_KEY=
+ALIBI_LLM_EXPLAIN=0
+ANTHROPIC_API_KEY=             # paid, do not use
 ```
-Note: a Claude Code subscription is not an API key. The app's runtime LLM needs its own key, or falls back to rules.
+Budget rule: no money is spent on APIs (§6.1). A Claude Code subscription is not an API key; the app's runtime LLM is optional, and without one it uses rules.
 
 ---
 
@@ -384,7 +439,7 @@ Note: a Claude Code subscription is not an API key. The app's runtime LLM needs 
    - **Export:** "Open report" → printable page.
 3. **History** (`/history`): past investigations.
 
-Build everything against `shared/fixtures/sample_investigation.json` first. Switch to the live API when the backend is ready.
+Build everything against `shared/fixtures/sample_investigation.json` first (also served at `GET /api/fixture`). Switch to the live API when the backend is ready. The live pipeline is wired: `POST /api/investigations` returns a real `Investigation`; until the witnesses are filled in, their findings are placeholders.
 
 ### Status vocabulary (use exactly these)
 | Status | Label in UI | Colour |

@@ -1,0 +1,979 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "GENERATED from backend/app/schemas.py by `python -m app.schemas`. Do not edit by hand.",
+  "$defs": {
+    "Assessment": {
+      "additionalProperties": false,
+      "properties": {
+        "headline": {
+          "enum": [
+            "context_not_supported",
+            "signals_inconsistent",
+            "partially_supported",
+            "consistent_so_far",
+            "insufficient_evidence"
+          ],
+          "title": "Headline",
+          "type": "string"
+        },
+        "headline_text": {
+          "title": "Headline Text",
+          "type": "string"
+        },
+        "counts": {
+          "$ref": "#/$defs/StatusCounts"
+        },
+        "families": {
+          "$ref": "#/$defs/FamilyStatuses"
+        },
+        "weak_indicators": {
+          "description": "finding ids",
+          "items": {
+            "type": "string"
+          },
+          "title": "Weak Indicators",
+          "type": "array"
+        },
+        "human_review": {
+          "enum": [
+            "priority",
+            "standard"
+          ],
+          "title": "Human Review",
+          "type": "string"
+        },
+        "experimental_score": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ExperimentalScore"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "headline",
+        "headline_text",
+        "counts",
+        "families",
+        "weak_indicators",
+        "human_review",
+        "experimental_score"
+      ],
+      "title": "Assessment",
+      "type": "object"
+    },
+    "Claim": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "location",
+            "time",
+            "event",
+            "weather_condition",
+            "speaker",
+            "other"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "string"
+        },
+        "normalized": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "description": "normalized for type=location. Extra keys (e.g. admin1, geocoder name) are allowed.",
+              "properties": {
+                "lat": {
+                  "maximum": 90,
+                  "minimum": -90,
+                  "title": "Lat",
+                  "type": "number"
+                },
+                "lon": {
+                  "maximum": 180,
+                  "minimum": -180,
+                  "title": "Lon",
+                  "type": "number"
+                },
+                "country": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "ISO 3166-1 alpha-2, e.g. 'IN'",
+                  "title": "Country"
+                }
+              },
+              "required": [
+                "lat",
+                "lon"
+              ],
+              "title": "LocationNormalized",
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "description": "normalized for type=time. Relative dates resolve against posted_at.\n\nprecision: 'part_of_day' is used for 'evening' (17-21), 'morning' (06-11), 'night' (20-04).",
+              "properties": {
+                "date": {
+                  "description": "YYYY-MM-DD (start date of the window)",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                  "title": "Date",
+                  "type": "string"
+                },
+                "start": {
+                  "format": "date-time",
+                  "title": "Start",
+                  "type": "string"
+                },
+                "end": {
+                  "format": "date-time",
+                  "title": "End",
+                  "type": "string"
+                },
+                "precision": {
+                  "enum": [
+                    "hour",
+                    "part_of_day",
+                    "day",
+                    "week",
+                    "month",
+                    "year"
+                  ],
+                  "title": "Precision",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "date",
+                "start",
+                "end",
+                "precision"
+              ],
+              "title": "TimeNormalized",
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "description": "normalized for type=weather_condition and type=event.",
+              "properties": {
+                "condition": {
+                  "enum": [
+                    "flood",
+                    "heavy_rain",
+                    "rain",
+                    "dry",
+                    "storm",
+                    "other"
+                  ],
+                  "title": "Condition",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "condition"
+              ],
+              "title": "ConditionNormalized",
+              "type": "object"
+            },
+            {
+              "description": "speaker / other: free-form",
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Normalized"
+        },
+        "source": {
+          "$ref": "#/$defs/ClaimSource"
+        },
+        "extracted_by": {
+          "enum": [
+            "llm",
+            "rules"
+          ],
+          "title": "Extracted By",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "value",
+        "normalized",
+        "source",
+        "extracted_by"
+      ],
+      "title": "Claim",
+      "type": "object"
+    },
+    "ClaimSource": {
+      "additionalProperties": false,
+      "description": "Exact character span of the caption that produced the claim (principle 3).",
+      "properties": {
+        "field": {
+          "const": "caption",
+          "default": "caption",
+          "title": "Field",
+          "type": "string"
+        },
+        "start": {
+          "minimum": 0,
+          "title": "Start",
+          "type": "integer"
+        },
+        "end": {
+          "minimum": 1,
+          "title": "End",
+          "type": "integer"
+        },
+        "text": {
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "field",
+        "start",
+        "end",
+        "text"
+      ],
+      "title": "ClaimSource",
+      "type": "object"
+    },
+    "Evidence": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "api",
+            "artifact",
+            "metadata_field",
+            "archive_match",
+            "input"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "ref": {
+          "minLength": 1,
+          "title": "Ref",
+          "type": "string"
+        },
+        "label": {
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "ref",
+        "label"
+      ],
+      "title": "Evidence",
+      "type": "object"
+    },
+    "ExperimentalScore": {
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Value",
+          "type": "integer"
+        },
+        "label": {
+          "default": "Experimental consistency index (not calibrated, not a probability)",
+          "title": "Label",
+          "type": "string"
+        }
+      },
+      "required": [
+        "value",
+        "label"
+      ],
+      "title": "ExperimentalScore",
+      "type": "object"
+    },
+    "FamilyStatuses": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "default": "not_applicable",
+          "enum": [
+            "consistent",
+            "contradiction",
+            "inconclusive",
+            "not_applicable"
+          ],
+          "title": "Context",
+          "type": "string"
+        },
+        "signal": {
+          "default": "not_applicable",
+          "enum": [
+            "consistent",
+            "contradiction",
+            "inconclusive",
+            "not_applicable"
+          ],
+          "title": "Signal",
+          "type": "string"
+        },
+        "pixels": {
+          "default": "not_applicable",
+          "enum": [
+            "consistent",
+            "contradiction",
+            "inconclusive",
+            "not_applicable"
+          ],
+          "title": "Pixels",
+          "type": "string"
+        }
+      },
+      "required": [
+        "context",
+        "signal",
+        "pixels"
+      ],
+      "title": "FamilyStatuses",
+      "type": "object"
+    },
+    "Finding": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "witness": {
+          "enum": [
+            "metadata",
+            "weather",
+            "prior_appearance",
+            "lipsync",
+            "enf",
+            "ela"
+          ],
+          "title": "Witness",
+          "type": "string"
+        },
+        "family": {
+          "enum": [
+            "context",
+            "signal",
+            "pixels"
+          ],
+          "title": "Family",
+          "type": "string"
+        },
+        "claim_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Claim Ids",
+          "type": "array"
+        },
+        "status": {
+          "enum": [
+            "consistent",
+            "contradiction",
+            "inconclusive",
+            "insufficient_signal",
+            "not_applicable"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "reliability": {
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ],
+          "title": "Reliability",
+          "type": "string"
+        },
+        "title": {
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "summary": {
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        },
+        "details": {
+          "additionalProperties": true,
+          "title": "Details",
+          "type": "object"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          },
+          "title": "Evidence",
+          "type": "array"
+        },
+        "locations": {
+          "description": "may be empty for whole-file findings",
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "region": "#/$defs/RegionLocation",
+                "timestamp": "#/$defs/TimestampLocation"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/TimestampLocation"
+              },
+              {
+                "$ref": "#/$defs/RegionLocation"
+              }
+            ]
+          },
+          "title": "Locations",
+          "type": "array"
+        },
+        "alternatives": {
+          "description": "never empty (principle 4)",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Alternatives",
+          "type": "array"
+        },
+        "limitations": {
+          "description": "never empty (principle 4)",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Limitations",
+          "type": "array"
+        },
+        "elapsed_ms": {
+          "default": 0,
+          "description": "filled in by the runner",
+          "minimum": 0,
+          "title": "Elapsed Ms",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "witness",
+        "family",
+        "claim_ids",
+        "status",
+        "reliability",
+        "title",
+        "summary",
+        "details",
+        "evidence",
+        "locations",
+        "alternatives",
+        "limitations",
+        "elapsed_ms"
+      ],
+      "title": "Finding",
+      "type": "object"
+    },
+    "Graph": {
+      "additionalProperties": false,
+      "properties": {
+        "nodes": {
+          "items": {
+            "$ref": "#/$defs/GraphNode"
+          },
+          "title": "Nodes",
+          "type": "array"
+        },
+        "edges": {
+          "items": {
+            "$ref": "#/$defs/GraphEdge"
+          },
+          "title": "Edges",
+          "type": "array"
+        }
+      },
+      "required": [
+        "nodes",
+        "edges"
+      ],
+      "title": "Graph",
+      "type": "object"
+    },
+    "GraphEdge": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "source": {
+          "title": "Source",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        },
+        "relation": {
+          "enum": [
+            "supports",
+            "contradicts",
+            "inconclusive",
+            "derived_from"
+          ],
+          "title": "Relation",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "source",
+        "target",
+        "relation"
+      ],
+      "title": "GraphEdge",
+      "type": "object"
+    },
+    "GraphNode": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "input",
+            "claim",
+            "witness"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "enum": [
+                "consistent",
+                "contradiction",
+                "inconclusive",
+                "insufficient_signal",
+                "not_applicable"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status"
+        },
+        "meta": {
+          "additionalProperties": true,
+          "title": "Meta",
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "label",
+        "status",
+        "meta"
+      ],
+      "title": "GraphNode",
+      "type": "object"
+    },
+    "HistoryEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "ts": {
+          "format": "date-time",
+          "title": "Ts",
+          "type": "string"
+        },
+        "event": {
+          "description": "e.g. file_received, claims_extracted, witness_completed, assessment_computed",
+          "title": "Event",
+          "type": "string"
+        },
+        "detail": {
+          "default": "",
+          "title": "Detail",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ts",
+        "event",
+        "detail"
+      ],
+      "title": "HistoryEvent",
+      "type": "object"
+    },
+    "InputFile": {
+      "additionalProperties": false,
+      "properties": {
+        "file_id": {
+          "minLength": 1,
+          "title": "File Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "mime": {
+          "title": "Mime",
+          "type": "string"
+        },
+        "size": {
+          "description": "bytes",
+          "minimum": 0,
+          "title": "Size",
+          "type": "integer"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "duration_s": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "null for images",
+          "title": "Duration S"
+        },
+        "stored_path": {
+          "description": "Read-only original, relative to the run folder. Served at /api/files/{inv_id}/{stored_path}.",
+          "minLength": 1,
+          "title": "Stored Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "file_id",
+        "name",
+        "mime",
+        "size",
+        "sha256",
+        "duration_s",
+        "stored_path"
+      ],
+      "title": "InputFile",
+      "type": "object"
+    },
+    "RegionLocation": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "region",
+          "default": "region",
+          "title": "Kind",
+          "type": "string"
+        },
+        "file_id": {
+          "title": "File Id",
+          "type": "string"
+        },
+        "frame_s": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "null for still images",
+          "title": "Frame S"
+        },
+        "bbox": {
+          "description": "normalized [x, y, w, h] in 0-1",
+          "items": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "maxItems": 4,
+          "minItems": 4,
+          "title": "Bbox",
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "file_id",
+        "frame_s",
+        "bbox"
+      ],
+      "title": "RegionLocation",
+      "type": "object"
+    },
+    "StatusCounts": {
+      "additionalProperties": false,
+      "properties": {
+        "consistent": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Consistent",
+          "type": "integer"
+        },
+        "contradiction": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Contradiction",
+          "type": "integer"
+        },
+        "inconclusive": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Inconclusive",
+          "type": "integer"
+        },
+        "insufficient_signal": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Insufficient Signal",
+          "type": "integer"
+        },
+        "not_applicable": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Not Applicable",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "consistent",
+        "contradiction",
+        "inconclusive",
+        "insufficient_signal",
+        "not_applicable"
+      ],
+      "title": "StatusCounts",
+      "type": "object"
+    },
+    "TimestampLocation": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "timestamp",
+          "default": "timestamp",
+          "title": "Kind",
+          "type": "string"
+        },
+        "file_id": {
+          "title": "File Id",
+          "type": "string"
+        },
+        "start_s": {
+          "minimum": 0,
+          "title": "Start S",
+          "type": "number"
+        },
+        "end_s": {
+          "minimum": 0,
+          "title": "End S",
+          "type": "number"
+        }
+      },
+      "required": [
+        "kind",
+        "file_id",
+        "start_s",
+        "end_s"
+      ],
+      "title": "TimestampLocation",
+      "type": "object"
+    },
+    "InvestigationSummary": {
+      "additionalProperties": false,
+      "description": "One row of the history list. Fetch the full Investigation by id for details.",
+      "properties": {
+        "id": {
+          "pattern": "^inv_\\d{8}_\\d{6}_[0-9a-z]{4}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "caption": {
+          "title": "Caption",
+          "type": "string"
+        },
+        "inputs": {
+          "description": "input file names",
+          "items": {
+            "type": "string"
+          },
+          "title": "Inputs",
+          "type": "array"
+        },
+        "headline": {
+          "enum": [
+            "context_not_supported",
+            "signals_inconsistent",
+            "partially_supported",
+            "consistent_so_far",
+            "insufficient_evidence"
+          ],
+          "title": "Headline",
+          "type": "string"
+        },
+        "headline_text": {
+          "title": "Headline Text",
+          "type": "string"
+        },
+        "counts": {
+          "$ref": "#/$defs/StatusCounts"
+        },
+        "human_review": {
+          "enum": [
+            "priority",
+            "standard"
+          ],
+          "title": "Human Review",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "created_at",
+        "caption",
+        "inputs",
+        "headline",
+        "headline_text",
+        "counts",
+        "human_review"
+      ],
+      "title": "InvestigationSummary",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "inv_YYYYMMDD_HHMMSS_xxxx",
+      "pattern": "^inv_\\d{8}_\\d{6}_[0-9a-z]{4}$",
+      "title": "Id",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "posted_at": {
+      "description": "user-supplied 'when was this shared', default now",
+      "format": "date-time",
+      "title": "Posted At",
+      "type": "string"
+    },
+    "caption": {
+      "default": "",
+      "title": "Caption",
+      "type": "string"
+    },
+    "inputs": {
+      "items": {
+        "$ref": "#/$defs/InputFile"
+      },
+      "title": "Inputs",
+      "type": "array"
+    },
+    "claims": {
+      "items": {
+        "$ref": "#/$defs/Claim"
+      },
+      "title": "Claims",
+      "type": "array"
+    },
+    "findings": {
+      "items": {
+        "$ref": "#/$defs/Finding"
+      },
+      "title": "Findings",
+      "type": "array"
+    },
+    "assessment": {
+      "$ref": "#/$defs/Assessment"
+    },
+    "graph": {
+      "$ref": "#/$defs/Graph"
+    },
+    "history": {
+      "items": {
+        "$ref": "#/$defs/HistoryEvent"
+      },
+      "title": "History",
+      "type": "array"
+    }
+  },
+  "required": [
+    "id",
+    "created_at",
+    "posted_at",
+    "caption",
+    "inputs",
+    "claims",
+    "findings",
+    "assessment",
+    "graph",
+    "history"
+  ],
+  "title": "Investigation",
+  "type": "object"
+}
