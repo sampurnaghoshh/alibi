@@ -835,6 +835,72 @@
       ],
       "title": "TimestampLocation",
       "type": "object"
+    },
+    "InvestigationSummary": {
+      "additionalProperties": false,
+      "description": "One row of the history list. Fetch the full Investigation by id for details.",
+      "properties": {
+        "id": {
+          "pattern": "^inv_\\d{8}_\\d{6}_[0-9a-z]{4}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "caption": {
+          "title": "Caption",
+          "type": "string"
+        },
+        "inputs": {
+          "description": "input file names",
+          "items": {
+            "type": "string"
+          },
+          "title": "Inputs",
+          "type": "array"
+        },
+        "headline": {
+          "enum": [
+            "context_not_supported",
+            "signals_inconsistent",
+            "partially_supported",
+            "consistent_so_far",
+            "insufficient_evidence"
+          ],
+          "title": "Headline",
+          "type": "string"
+        },
+        "headline_text": {
+          "title": "Headline Text",
+          "type": "string"
+        },
+        "counts": {
+          "$ref": "#/$defs/StatusCounts"
+        },
+        "human_review": {
+          "enum": [
+            "priority",
+            "standard"
+          ],
+          "title": "Human Review",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "created_at",
+        "caption",
+        "inputs",
+        "headline",
+        "headline_text",
+        "counts",
+        "human_review"
+      ],
+      "title": "InvestigationSummary",
+      "type": "object"
     }
   },
   "additionalProperties": false,

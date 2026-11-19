@@ -397,6 +397,36 @@ class Investigation(_Model):
 
 
 # ---------------------------------------------------------------------------
+# 4.7 InvestigationSummary (GET /api/investigations, history page)
+# ---------------------------------------------------------------------------
+
+class InvestigationSummary(_Model):
+    """One row of the history list. Fetch the full Investigation by id for details."""
+
+    id: str = Field(pattern=INVESTIGATION_ID_PATTERN)
+    created_at: AwareDatetime
+    caption: str
+    inputs: list[str] = Field(description="input file names")
+    headline: Headline
+    headline_text: str
+    counts: StatusCounts
+    human_review: HumanReview
+
+    @classmethod
+    def from_investigation(cls, inv: Investigation) -> "InvestigationSummary":
+        return cls(
+            id=inv.id,
+            created_at=inv.created_at,
+            caption=inv.caption,
+            inputs=[i.name for i in inv.inputs],
+            headline=inv.assessment.headline,
+            headline_text=inv.assessment.headline_text,
+            counts=inv.assessment.counts,
+            human_review=inv.assessment.human_review,
+        )
+
+
+# ---------------------------------------------------------------------------
 # JSON Schema export
 # ---------------------------------------------------------------------------
 
@@ -404,8 +434,12 @@ SCHEMA_PATH = Path(__file__).resolve().parents[2] / "shared" / "contract.schema.
 
 
 def contract_json_schema() -> dict[str, Any]:
-    """JSON Schema for Investigation (includes Finding, Claim, etc. under $defs)."""
+    """JSON Schema whose root is Investigation. Every other model (Finding, Claim,
+    InvestigationSummary, ...) is under $defs."""
     schema = Investigation.model_json_schema(mode="serialization")
+    summary = InvestigationSummary.model_json_schema(mode="serialization")
+    schema["$defs"].update(summary.pop("$defs", {}))
+    schema["$defs"]["InvestigationSummary"] = summary
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$comment": "GENERATED from backend/app/schemas.py by `python -m app.schemas`. Do not edit by hand.",

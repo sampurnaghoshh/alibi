@@ -8,7 +8,13 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from app.schemas import Finding, Investigation, SCHEMA_PATH, render_contract_json_schema
+from app.schemas import (
+    SCHEMA_PATH,
+    Finding,
+    Investigation,
+    InvestigationSummary,
+    render_contract_json_schema,
+)
 
 FIXTURE = Path(__file__).resolve().parents[2] / "shared" / "fixtures" / "sample_investigation.json"
 
@@ -35,6 +41,21 @@ def test_json_schema_is_up_to_date():
     assert SCHEMA_PATH.read_text(encoding="utf-8") == render_contract_json_schema(), (
         "shared/contract.schema.json is stale: run `python -m app.schemas` from backend/"
     )
+
+
+def test_summary_from_fixture(raw):
+    s = InvestigationSummary.from_investigation(Investigation.model_validate(raw)).model_dump(mode="json")
+    assert s == {
+        "id": raw["id"],
+        "created_at": raw["created_at"],
+        "caption": raw["caption"],
+        "inputs": ["chennai_flood.mp4"],
+        "headline": raw["assessment"]["headline"],
+        "headline_text": raw["assessment"]["headline_text"],
+        "counts": raw["assessment"]["counts"],
+        "human_review": "priority",
+    }
+    assert "InvestigationSummary" in json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))["$defs"]
 
 
 def test_fixture_has_no_forbidden_words(raw):

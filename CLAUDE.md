@@ -173,6 +173,24 @@ Witness → family (fixed):
 - `claim_ids`, location `file_id`s, `weak_indicators` and graph edges must point at things that exist, and `assessment.counts` must match the findings.
 - After changing `schemas.py`, regenerate the JSON Schema: `cd backend; python -m app.schemas`. `pytest` fails if it is stale.
 
+### 4.7 InvestigationSummary (what `GET /api/investigations` returns, for the history page)
+A list, newest first. Fetch the full `Investigation` by `id` for anything else. In `contract.schema.json` it is under `$defs/InvestigationSummary`.
+```json
+[
+  {
+    "id": "inv_20261119_101500_ab12",
+    "created_at": "ISO",
+    "caption": "Massive flooding in Chennai yesterday evening, roads completely underwater",
+    "inputs": ["chennai_flood.mp4"],
+    "headline": "context_not_supported",
+    "headline_text": "The stated context is not supported by the available evidence",
+    "counts": { "consistent": 0, "contradiction": 2, "inconclusive": 2, "insufficient_signal": 1, "not_applicable": 1 },
+    "human_review": "priority"
+  }
+]
+```
+- `inputs` is the list of input file **names** (not full `InputFile` objects).
+
 ---
 
 ## 5. Final witness list (FROZEN)
