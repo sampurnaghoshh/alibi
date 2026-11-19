@@ -104,7 +104,8 @@ def test_authenticity_ai_marker_beats_everything():
                                "generators": ["DALL-E"]}, "AI-generation marker found: Software = DALL-E 3"))
     au = summarize(inv.findings, inv.claims, unavailable=set())["ai_check"]
     assert au == {"question": "Is this media AI-generated or manipulated?", "kind": "ai_marker",
-                  "answer": "AI-generation marker found (DALL-E)", "note": au["note"]}
+                  "answer": "AI-generation marker found (DALL-E)", "note": au["note"],
+                  "badge": "AI: DETECTED", "badge_detail": "DALL-E"}
 
 
 def test_authenticity_editing_traces():
@@ -159,3 +160,34 @@ def test_caption_less_run_says_only_the_file_was_examined():
     assert s["caption_less"] is True
     assert s["sentence"].startswith("No caption to check, so only the file itself was examined.")
     assert s["ai_check"]["answer"] == "No manipulation indicators found"
+
+
+def test_badges_for_each_kind_and_the_allowed_sentence():
+    marker = _inv(_with_metadata({"ai_markers": [{"label": "x", "generator": "Midjourney"}], "generators": ["Midjourney"]},
+                                 "AI-generation marker found: x"))
+    edited = _inv(_with_metadata({"software_tags": ["CapCut"]}, "Editing software tag present"))
+    plain = _inv()
+    got = [summarize(i.findings, i.claims, unavailable=set())["ai_check"] for i in (marker, edited, plain)]
+    assert [(g["badge"], g["badge_detail"]) for g in got[:2]] == [("AI: DETECTED", "Midjourney"),
+                                                                 ("EDITED: DETECTED", "CapCut")]
+    assert got[2]["badge"] == "AI: NOT DETECTED"
+    assert got[2]["badge_detail"] == ("No AI marker or editing trace found. Most AI-generated media carries no "
+                                      "marker, so this is not proof of authenticity.")
+    for g in got:
+        assert not config.forbidden_word(g["badge"] + " " + g["badge_detail"])
+    assert config.forbidden_word("this is proof of authenticity") is not None   # only the exact sentence passes
+
+
+def test_caption_less_report_has_the_badge_and_no_score():
+    from app.report import render_report
+
+    def no_claims(raw):
+        raw["caption"], raw["claims"] = "", []
+        for f in raw["findings"]:
+            f["claim_ids"] = []
+        raw["graph"]["edges"] = [e for e in raw["graph"]["edges"] if not e["target"].startswith("c")]
+        raw["graph"]["nodes"] = [n for n in raw["graph"]["nodes"] if n["type"] != "claim"]
+    html = render_report(_inv(no_claims))
+    assert "AI: NOT DETECTED" in html and "Experimental score" not in html
+    full = render_report(_inv())
+    assert "AI: NOT DETECTED" in full and "Experimental score" in full

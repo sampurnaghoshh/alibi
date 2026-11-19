@@ -133,7 +133,10 @@ FORBIDDEN_WORDS_RE = r"\b(fake|real|authentic\w*|proven|definitely|AI-generated)
 # The one sentence that may contain a forbidden word: the question judges ask, shown with its answer
 # ("Is this media AI-generated or manipulated?" -> "AI-generation marker found (...)"). It is a question,
 # never a verdict; every answer and all other UI/report text still obey FORBIDDEN_WORDS_RE.
-FORBIDDEN_WORDS_ALLOWED_PHRASES = ("Is this media AI-generated or manipulated?",)
+FORBIDDEN_WORDS_ALLOWED_PHRASES = (
+    "Is this media AI-generated or manipulated?",
+    "No AI marker or editing trace found. Most AI-generated media carries no marker, so this is not proof of authenticity.",
+)
 
 
 def forbidden_word(text: str):

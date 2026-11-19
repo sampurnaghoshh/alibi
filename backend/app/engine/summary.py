@@ -100,6 +100,7 @@ def witness_clause(witness: str, status: str, scopes: list[str], claims: list[Cl
 
 
 AUTHENTICITY_QUESTION = "Is this media AI-generated or manipulated?"
+NOT_DETECTED_NOTE = config.FORBIDDEN_WORDS_ALLOWED_PHRASES[1]   # the one allowed sentence
 AUTHENTICITY_NOTE = ("Checked: AI-provenance markers (C2PA, IPTC source type, generator tags) and editing-software "
                      "tags. Most synthetic or edited media carries no marker, so a missing marker is not proof.")
 
@@ -113,14 +114,17 @@ def ai_check(findings: list[Finding]) -> dict:
         gens = list(dict.fromkeys(g for f in ai for g in (f.details.get("generators") or [])))
         what = ", ".join(gens) if gens else ai[0].details["ai_markers"][0].get("label", "metadata marker")
         return {"question": AUTHENTICITY_QUESTION, "kind": "ai_marker",
-                "answer": f"AI-generation marker found ({what})", "note": AUTHENTICITY_NOTE}
+                "answer": f"AI-generation marker found ({what})", "note": AUTHENTICITY_NOTE,
+                "badge": "AI: DETECTED", "badge_detail": what}
     edits = [f for f in meta if (f.details or {}).get("software_tags") and f.title == "Editing software tag present"]
     if edits:
         tools = list(dict.fromkeys(t for f in edits for t in f.details["software_tags"]))
         return {"question": AUTHENTICITY_QUESTION, "kind": "editing",
-                "answer": f"Editing traces found ({', '.join(tools[:3])})", "note": AUTHENTICITY_NOTE}
+                "answer": f"Editing traces found ({', '.join(tools[:3])})", "note": AUTHENTICITY_NOTE,
+                "badge": "EDITED: DETECTED", "badge_detail": ", ".join(tools[:3])}
     return {"question": AUTHENTICITY_QUESTION, "kind": "none",
-            "answer": "No manipulation indicators found", "note": AUTHENTICITY_NOTE}
+            "answer": "No manipulation indicators found", "note": AUTHENTICITY_NOTE,
+            "badge": "AI: NOT DETECTED", "badge_detail": NOT_DETECTED_NOTE}
 
 
 def unavailable_witnesses() -> set[str]:

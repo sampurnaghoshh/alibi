@@ -111,6 +111,22 @@ if (lastEnd < caption.length) {
             }`}
           >
             <p className="text-xs tracking-widest text-zinc-500">AI &amp; MANIPULATION CHECK</p>
+            {auth.badge && (
+              <div
+                className={`mt-3 inline-block rounded-xl border-2 px-5 py-3 ${
+                  auth.kind === "none" ? "border-[#303840]" : "border-[#D96B68]"
+                }`}
+              >
+                <p
+                  className={`text-4xl font-bold tracking-wide ${
+                    auth.kind === "none" ? "text-[#929DA7]" : "text-[#D96B68]"
+                  }`}
+                >
+                  {auth.badge}
+                </p>
+                <p className="mt-1 max-w-xl text-sm text-zinc-400">{auth.badge_detail}</p>
+              </div>
+            )}
             <p className="mt-2 text-lg">
               <span className="text-zinc-400">{auth.question} </span>
               <span className={`font-semibold ${auth.kind === "none" ? "text-zinc-100" : "text-[#D96B68]"}`}>
@@ -167,11 +183,14 @@ if (lastEnd < caption.length) {
     )}
   </p>
 
-  <p className="mt-4 text-xs text-zinc-500">
-    Highlighted text represents extracted claim spans from the original caption.
-  </p>
+  {caption && (
+    <p className="mt-4 text-xs text-zinc-500">
+      Highlighted text represents extracted claim spans from the original caption.
+    </p>
+  )}
 </section>
 <section className="grid gap-5 md:grid-cols-3">
+  {!summary?.caption_less && (
   <div className="rounded-xl border border-white/10 bg-[#131720] p-5">
     <p className="text-xs tracking-widest text-zinc-500">
       EXPERIMENTAL INDEX
@@ -191,6 +210,7 @@ if (lastEnd < caption.length) {
       <p className="mt-2 text-sm text-zinc-500">Not available</p>
     )}
   </div>
+  )}
 
   <div className="rounded-xl border border-white/10 bg-[#131720] p-5 md:col-span-2">
     <p className="text-xs tracking-widest text-zinc-500">MEDIA INPUT</p>

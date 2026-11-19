@@ -73,6 +73,11 @@ svg.ic { width: 1.15em; height: 1.15em; flex: none; vertical-align: -0.2em; }
   border-radius: 8px; background: var(--surface); animation: fade 0.35s ease-out; }
 .auth.k-ai_marker { border-left-color: var(--contra); }
 .auth.k-editing { border-left-color: var(--contra); }
+.aibadge { display: inline-block; margin-bottom: 8px; padding: 8px 16px; border: 2px solid var(--border); border-radius: 12px; }
+.aibadge-main { font-size: 2em; font-weight: 700; letter-spacing: 0.04em; line-height: 1.1; }
+.aibadge.b-hit { border-color: var(--contra); } .aibadge.b-hit .aibadge-main { color: var(--contra); }
+.aibadge.b-none .aibadge-main { color: var(--text-2); }
+.aibadge-detail { font-size: 0.8em; color: var(--text-2); margin-top: 2px; max-width: 60ch; }
 .auth-line { font-size: 1.05em; }
 .auth-q { color: var(--text-2); }
 .auth-a { font-weight: 600; color: var(--text); }

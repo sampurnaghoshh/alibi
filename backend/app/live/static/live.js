@@ -816,6 +816,9 @@
     box.querySelector(".auth-q").textContent = au.question + " ";
     $("auth-a").textContent = au.answer;
     $("auth-a").title = au.note;
+    $("aibadge").className = "aibadge " + (au.kind === "none" ? "b-none" : "b-hit");
+    $("aibadge-main").textContent = au.badge || "";
+    $("aibadge-detail").textContent = au.badge_detail || "";
     $("auth-ctx").textContent = sm.caption_less
       ? "No caption to check, so place, time and weather checks were skipped."
       : "Context: " + a.headline_text;

@@ -91,6 +91,10 @@ td.hash { font-size:8.5pt; color:var(--muted); padding-top:0; }
 td.hash .mono { color:var(--ink); }
 tbody.input { break-inside:avoid; }
 .summary { margin:0 0 8px; font-size:10.5pt; }
+.badge { margin:6px 0 10px; padding:10px 14px; border:2px solid var(--line); border-radius:12px; }
+.badge-main { font-size:20pt; font-weight:700; letter-spacing:.04em; }
+.badge.b-hit { border-color:var(--red); } .badge.b-hit .badge-main { color:var(--red); }
+.badge.b-none .badge-main { color:#5f6973; } .badge-detail { font-size:9pt; color:#5f6973; margin-top:2px; }
 .auth { margin:4px 0 8px; padding:6px 10px; border-left:4px solid var(--line); background:var(--soft); }
 .auth b.s-contradiction { color:var(--red); border:0; }
 .pairs { margin-top:6px; }
@@ -445,7 +449,7 @@ def render_report(inv: Investigation, store: Optional[RunStore] = None) -> str:
     score = (
         f'<p class="score">Experimental score: <b class="mono">{a.experimental_score.value}</b> / 100. '
         f"{e(a.experimental_score.label)}. It is not used for the headline above.</p>"
-        if a.experimental_score else ""
+        if a.experimental_score and not sm["caption_less"] else ""   # caption-less: hidden, reads as a %
     )
 
     return f"""<!doctype html>
@@ -464,6 +468,8 @@ def render_report(inv: Investigation, store: Optional[RunStore] = None) -> str:
 <p class="no-print muted">Use your browser's Print → Save as PDF to keep a copy.</p>
 
 <h2>Assessment</h2>
+<div class="badge {'b-hit' if auth['kind'] != 'none' else 'b-none'}"><div class="badge-main">{e(auth["badge"])}</div>
+<div class="badge-detail">{e(auth["badge_detail"])}</div></div>
 <p class="auth"><span class="muted">{e(auth["question"])}</span> <b class="{'s-contradiction' if auth['kind'] != 'none' else ''}">{e(auth["answer"])}</b><br>
 <span class="muted" style="font-size:8.5pt">{e(auth["note"])}</span></p>
 <div class="headline">{e(auth["answer"]) if sm["caption_less"] else e(a.headline_text)}</div>
