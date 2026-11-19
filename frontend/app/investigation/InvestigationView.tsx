@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { getSummary, type Summary } from "@/lib/api";
+import { getMediaUrl, getSummary, type Summary } from "@/lib/api";
 import type { Investigation } from "@/lib/types";
-import { AudioWaveform, CloudRain, FileSearch, History, ScanEye, Zap, type LucideIcon } from "lucide-react";
+import { AudioWaveform, CloudRain, FileSearch, Fingerprint, History, ScanEye, Zap, type LucideIcon } from "lucide-react";
 import EvidenceGraph from "./EvidenceGraph";
 import { statusStyles, statusLabels } from "@/lib/status";
 
@@ -16,6 +16,7 @@ const WITNESS_ICON: Record<string, LucideIcon> = {
   lipsync: AudioWaveform,
   enf: Zap,
   ela: ScanEye,
+  synthetic_signals: Fingerprint,
 };
 
 export function Problem({ title, message }: { title: string; message: string }) {
@@ -107,19 +108,19 @@ if (lastEnd < caption.length) {
         {auth && (
           <section
             className={`rounded-xl border border-white/10 border-l-4 bg-[#15191D] p-5 ${
-              auth.kind === "none" ? "border-l-[#929CAA]" : "border-l-[#D96B68]"
+              !auth.alert ? "border-l-[#929CAA]" : "border-l-[#D96B68]"
             }`}
           >
             <p className="text-xs tracking-widest text-zinc-500">AI &amp; MANIPULATION CHECK</p>
             {auth.badge && (
               <div
                 className={`mt-3 inline-block rounded-xl border-2 px-5 py-3 ${
-                  auth.kind === "none" ? "border-[#303840]" : "border-[#D96B68]"
+                  !auth.alert ? "border-[#303840]" : "border-[#D96B68]"
                 }`}
               >
                 <p
                   className={`text-4xl font-bold tracking-wide ${
-                    auth.kind === "none" ? "text-[#929DA7]" : "text-[#D96B68]"
+                    !auth.alert ? "text-[#929DA7]" : "text-[#D96B68]"
                   }`}
                 >
                   {auth.badge}
@@ -129,7 +130,7 @@ if (lastEnd < caption.length) {
             )}
             <p className="mt-2 text-lg">
               <span className="text-zinc-400">{auth.question} </span>
-              <span className={`font-semibold ${auth.kind === "none" ? "text-zinc-100" : "text-[#D96B68]"}`}>
+              <span className={`font-semibold ${!auth.alert ? "text-zinc-100" : "text-[#D96B68]"}`}>
                 {auth.answer}
               </span>
             </p>
@@ -310,11 +311,23 @@ if (lastEnd < caption.length) {
       <h4 className="text-xs font-semibold uppercase tracking-widest text-zinc-500">
         Supporting evidence
       </h4>
-      {finding.evidence.map((item, index) => (
-        <p key={index} className="mt-2 text-sm text-zinc-400">
-          {item.label}
-        </p>
-      ))}
+      {finding.evidence.map((item, index) =>
+        item.kind === "artifact" && /\.png$/i.test(item.ref) ? (
+          <figure key={index} className="mt-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={getMediaUrl(investigation.id, item.ref)}
+              alt={item.label}
+              className="max-h-72 w-full rounded-xl border border-white/10 bg-[#0D1012] object-contain"
+            />
+            <figcaption className="mt-1 text-xs text-zinc-500">{item.label}</figcaption>
+          </figure>
+        ) : (
+          <p key={index} className="mt-2 text-sm text-zinc-400">
+            {item.label}
+          </p>
+        )
+      )}
     </div>
 
     <div>

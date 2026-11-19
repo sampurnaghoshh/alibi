@@ -155,7 +155,7 @@ def test_file_with_caption_full_flow(world):
     edits = world.edits()
     assert len(edits) == 7
     assert edits[0].startswith("🔍 Checking:") and "…" in edits[0]
-    line = ("Metadata ❔ · Weather ⚠️ · Prior appearance ⚠️ · Lip-sync ➖ · Power-grid hum ❔ · ELA ❔")
+    line = ("Metadata ❔ · Weather ⚠️ · Prior appearance ⚠️ · Lip-sync ➖ · Power-grid hum ❔ · ELA ❔ · Synthetic signals ➖")
     assert edits[-1] == "🔍 Analysis complete: " + line
 
     final = sent[3]

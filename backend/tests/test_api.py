@@ -57,7 +57,7 @@ def test_end_to_end_with_stubs():
     assert client.get(f"/api/files/{inv.id}/{inp.stored_path}").content == png
 
     # Every witness reported; stubs never contradict.
-    assert {f.witness for f in inv.findings} == {"metadata", "weather", "prior_appearance", "lipsync", "enf", "ela"}
+    assert {f.witness for f in inv.findings} == {"metadata", "weather", "prior_appearance", "lipsync", "enf", "ela", "synthetic_signals"}
     assert inv.assessment.counts.contradiction == 0
     assert inv.assessment.headline == "insufficient_evidence"
     assert inv.assessment.human_review == "standard"
@@ -65,7 +65,7 @@ def test_end_to_end_with_stubs():
     # Chain of custody, in order.
     events = [h.event for h in inv.history]
     assert events[0] == "file_received" and events[1] == "claims_extracted"
-    assert events.count("witness_started") == 6 and events.count("witness_completed") == 6
+    assert events.count("witness_started") == 7 and events.count("witness_completed") == 7
     assert events[-2:] == ["assessment_computed", "graph_ready"]   # "done" is logged after saving
 
     # Saved run can be fetched back, listed and reported.
@@ -96,7 +96,7 @@ def test_unknown_investigation_404():
 def test_health():
     r = client.get("/api/health").json()
     assert r["status"] == "ok" and r["mode"] == "live"
-    assert {w["name"] for w in r["witnesses"]} == {"metadata", "weather", "prior_appearance", "lipsync", "enf", "ela"}
+    assert {w["name"] for w in r["witnesses"]} == {"metadata", "weather", "prior_appearance", "lipsync", "enf", "ela", "synthetic_signals"}
 
 
 @pytest.mark.parametrize("path", ["../../backend/.env", "history.jsonl", "originals/x.mp4"])

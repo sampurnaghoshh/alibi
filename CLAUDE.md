@@ -72,7 +72,7 @@ Family      = "context" | "signal" | "pixels"
 Status      = "consistent" | "contradiction" | "inconclusive" | "insufficient_signal" | "not_applicable"
 Reliability = "high" | "medium" | "low"
 ClaimType   = "location" | "time" | "event" | "weather_condition" | "speaker" | "other"
-WitnessName = "metadata" | "weather" | "prior_appearance" | "lipsync" | "enf" | "ela"
+WitnessName = "metadata" | "weather" | "prior_appearance" | "lipsync" | "enf" | "ela" | "synthetic_signals"
 ```
 
 Witness → family (fixed):
@@ -80,7 +80,7 @@ Witness → family (fixed):
 |---|---|
 | metadata, weather, prior_appearance | context |
 | lipsync, enf | signal |
-| ela | pixels |
+| ela, synthetic_signals | pixels |
 
 ### 4.2 Claim
 ```json
@@ -207,6 +207,7 @@ A list, newest first. Fetch the full `Investigation` by `id` for anything else. 
 | 5 | Lip-sync synchrony indicator | Nooman | **Must** | medium |
 | 6 | ENF power-grid hum | Nooman | **Conditional** on the hour-1 test | medium |
 | 7 | ELA heatmap | Sampurna (from Adithi) | Done | low (always) |
+| 8 | Synthetic signals (PS04 synthetic image / video / speech indicators; approved by Sampurna, §6.8) | Sampurna | Done | medium |
 | — | Solar/shadow analysis | — | **Roadmap slide only** | — |
 | — | Extra deepfake classifiers | — | **Skip** | — |
 
@@ -328,6 +329,11 @@ All thresholds below are **starting values. Calibrate them on genuine clips** an
 - **Always `inconclusive`, reliability `low`**, listed under `weak_indicators`. ELA is a visual aid, not a verdict.
 
 ---
+
+### 6.8 Synthetic signals (Sampurna; added after the freeze with team-lead approval): `witnesses/synthetic_signals.py`
+- Images: noise-residual spectrum peaks (up-sampling grids), missing sensor noise in flat blocks, camera signature (JPEG tables, make/model/lens; context only). Contradiction (medium) only when both pixel signals are strong and no camera fields exist; any pixel signal -> inconclusive (low) "weak synthetic signal"; none -> consistent (low).
+- Video: frame-change spikes / flicker -> timestamp locations; never a contradiction. Audio (files and video soundtracks): digital-silence floor, hard bandwidth limit, spectral flatness; one indicator alone is not counted; never a contradiction.
+- Artifacts: spectrum, noise map, frame-change graph (+ JSON), audio spectrum. Badge: marker > AI SIGNALS: STRONG > EDITED > AI SIGNALS: WEAK > AI: NOT DETECTED (`app/engine/summary.py` `ai_check`). Calibration: `scripts/calibrate_synthetic.py`; thresholds `SYNTH_*` in `config.py`. Re-used on caption re-runs.
 
 ## 7. Rule engine (Sampurna): `app/engine/rules.py`
 

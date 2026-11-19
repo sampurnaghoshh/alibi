@@ -23,7 +23,8 @@
   var WITNESSES = [
     ["metadata", "Metadata", "file-search"], ["weather", "Weather", "cloud-rain"],
     ["prior_appearance", "Prior appearance", "history"], ["lipsync", "Lip-sync", "audio-waveform"],
-    ["enf", "Power-grid hum", "zap"], ["ela", "ELA", "scan-eye"]
+    ["enf", "Power-grid hum", "zap"], ["ela", "ELA", "scan-eye"],
+    ["synthetic_signals", "Synthetic signals", "fingerprint"]
   ];
   var LABEL = {}, ICON = {}, SLOT = {};
   WITNESSES.forEach(function (w, i) { LABEL[w[0]] = w[1]; ICON[w[0]] = w[2]; SLOT[w[0]] = i; });
@@ -41,7 +42,9 @@
     enf: { what: "The mains-power hum (50 or 60 Hz) in the audio, compared with the grid frequency of the stated country.",
            measure: "The power-grid hum" },
     ela: { what: "How evenly a keyframe re-compresses as JPEG (an error-level heatmap). A visual aid only, never a verdict.",
-           measure: "The error-level heatmap" }
+           measure: "The error-level heatmap" },
+    synthetic_signals: { what: "Signal-level traces of generation: periodic peaks in the frequency spectrum, missing sensor noise and camera signature (images), abrupt frame changes (video), and cloned-speech indicators (audio).",
+                         measure: "The synthetic-signal analysis" }
   };
 
   var STATUS = {
@@ -674,6 +677,14 @@
       addList(data, (f.evidence || []).map(function (e) { return e.label + (e.kind === "api" ? " (" + e.kind + ")" : ": " + e.ref); }),
               nums.length ? "Sources" : null);
       if (!nums.length && !(f.evidence || []).length) data.appendChild(el("p", "", "No data was retrieved for this finding."));
+      (f.evidence || []).forEach(function (e) {          // artifact images (spectrum, noise map, charts, heatmaps)
+        if (e.kind !== "artifact" || !/\.png$/i.test(e.ref) || !current) return;
+        var img = el("img", "f-img");
+        img.src = "/api/files/" + encodeURIComponent(current.id) + "/" + e.ref;
+        img.alt = e.label || "";
+        img.title = e.label || "";
+        data.appendChild(img);
+      });
       box.appendChild(data);
 
       var found = section("What was found");
@@ -816,7 +827,7 @@
     box.querySelector(".auth-q").textContent = au.question + " ";
     $("auth-a").textContent = au.answer;
     $("auth-a").title = au.note;
-    $("aibadge").className = "aibadge " + (au.kind === "none" ? "b-none" : "b-hit");
+    $("aibadge").className = "aibadge " + (au.alert ? "b-hit" : "b-none");
     $("aibadge-main").textContent = au.badge || "";
     $("aibadge-detail").textContent = au.badge_detail || "";
     $("auth-ctx").textContent = sm.caption_less
@@ -832,7 +843,7 @@
     showAuthenticity(a, sm);
     if (sm && sm.caption_less && sm.ai_check) {          // file-only run: the AI & manipulation answer leads
       $("headline").textContent = sm.ai_check.answer;
-      $("result").className = "result " + (sm.ai_check.kind === "none" ? "h-grey" : "h-red");
+      $("result").className = "result " + (sm.ai_check.alert ? "h-red" : "h-grey");
     }
     $("sentence").textContent = sm ? sm.sentence : "";
     var counts = $("counts");

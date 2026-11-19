@@ -37,6 +37,7 @@ def all_witnesses() -> list[Witness]:
     from app.witnesses.lipsync import LipsyncWitness
     from app.witnesses.metadata import MetadataWitness
     from app.witnesses.prior_appearance import PriorAppearanceWitness
+    from app.witnesses.synthetic_signals import SyntheticSignalsWitness
     from app.witnesses.weather import WeatherWitness
 
     return [
@@ -46,6 +47,7 @@ def all_witnesses() -> list[Witness]:
         LipsyncWitness(),
         EnfWitness(),
         ElaWitness(),
+        SyntheticSignalsWitness(),
     ]
 
 

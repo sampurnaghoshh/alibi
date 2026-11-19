@@ -62,7 +62,7 @@ MAX_UPLOAD_BYTES = 200 * 1024 * 1024        # per file
 # Live Desk (§14). Caption re-runs (POST /api/investigations/{id}/rerun) repeat the witnesses whose
 # result depends on the caption's claims and re-use the rest from the original run.
 RERUN_CAPTION_DEPENDENT = ("metadata", "weather", "prior_appearance", "enf")   # ENF: verdict uses the claimed country
-RERUN_REUSED = ("ela", "lipsync")
+RERUN_REUSED = ("ela", "lipsync", "synthetic_signals")
 LIVE_BACKGROUND_WORKERS = 2          # async investigations running at once
 LIVE_SSE_POLL_S = 0.2                # how often the event stream checks history.jsonl for new lines
 LIVE_SSE_KEEPALIVE_S = 15.0
@@ -126,6 +126,7 @@ WITNESS_LABELS = {
     "lipsync": "Lip-sync",
     "enf": "Power-grid hum",
     "ela": "ELA",
+    "synthetic_signals": "Synthetic signals",
 }
 
 # §2.7 / §9: never in UI, report or explanation text. "authentic" covers "authenticity".
@@ -365,3 +366,35 @@ PRIOR_MIN_MATCHED_FRACTION = 0.30    # ... or >= 30% of sampled frames
 ARCHIVE_JSON = ARCHIVE_DIR / "archive.json"
 
 # ELA moved to the Sampurna section (handed over by Adithi).
+
+
+# Synthetic-generation signals (PS04 synthetic images / video / speech; Sampurna). Signal-level indicators,
+# no trained classifier. Starting values, calibrated on demo/controls (genuine, must never contradict) and
+# demo/ai_test/ (scripts/calibrate_synthetic.py prints the scores).
+SYNTH_MAX_INPUTS = 3
+SYNTH_FFT_MAX_SIDE = 1024            # centre crop (cropping keeps periodic traces, resizing would not)
+SYNTH_FFT_MIN_RADIUS = 0.08          # ignore the lowest frequencies (picture content)
+SYNTH_FFT_PEAK_Z = 6.0               # a peak in the noise-residual spectrum: >= 6 robust sd above the radial level
+SYNTH_FFT_MIN_PEAKS = 4              # periodic grids give several symmetric peaks
+SYNTH_FFT_WEAK_Z = 6.0               # strongest peak z for a weak / strong spectral signal (genuine and screenshots: <= 4.1;
+SYNTH_FFT_STRONG_Z = 9.0             # a 4x nearest-neighbour upsample: 6.2)
+SYNTH_NOISE_BLOCK_PX = 32
+SYNTH_NOISE_FLAT_QUANTILE = 0.3      # the flattest 30% of blocks
+SYNTH_NOISE_ZERO_STD = 0.5
+SYNTH_NOISE_WEAK_STD = 0.9           # residual sd in flat blocks (0-255 scale). demo/ai_test: 0.38-0.87 for 4 of 5 AI images
+                                     # (2.06 for the 5th); the one camera-style JPEG: 0.99. Few genuine photos: weak only.
+SYNTH_NOISE_STRONG_STD = 0.3
+SYNTH_MIN_STRONG_SIGNALS = 2         # contradiction only when both pixel signals are strong (and no camera fields)
+SYNTH_VIDEO_FPS = 10.0
+SYNTH_VIDEO_MAX_S = 60.0
+SYNTH_SPIKE_MIN = 30.0               # mean abs frame difference (0-255) for an abrupt change ...
+SYNTH_SPIKE_RATIO = 8.0              # ... and at least 8x the clip's median change
+SYNTH_FLICKER_MIN = 4.0              # brightness step for a flicker reversal
+SYNTH_FLICKER_RATE = 0.15            # share of frames with reversals
+SYNTH_AUDIO_MAX_S = 60.0
+SYNTH_DIGITAL_SILENCE_DBFS = -80.0   # noise floor at or below: near-digital silence
+SYNTH_CUTOFF_DROP_DB = 30.0          # a hard bandwidth limit: >= 30 dB drop within 500 Hz ...
+SYNTH_CUTOFF_MAX_HZ = 12500          # ... at or below 12.5 kHz (8 / 11 / 12 kHz = 16 / 22 / 24 kHz generators)
+SYNTH_FLATNESS_MAX = 0.002           # median spectral flatness of the louder frames at or below: very tonal
+SYNTH_AUDIO_WEAK_COUNT = 2           # 2 audio indicators = weak (one alone is common: WhatsApp cuts at ~5.5 kHz)
+SYNTH_AUDIO_STRONG_COUNT = 3         # all 3 = strong (still never a contradiction)

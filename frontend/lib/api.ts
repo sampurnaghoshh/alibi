@@ -136,8 +136,9 @@ export function getMediaUrl(investigationId: string, storedPath: string): string
 
 /** The plain AI & manipulation answer + summary sentence (app/engine/summary.py), same text as the Live Desk. */
 export interface AiCheck {
-  question: string; answer: string; kind: "ai_marker" | "editing" | "none"; note: string
-  badge?: string          // "AI: DETECTED" | "EDITED: DETECTED" | "AI: NOT DETECTED"
+  question: string; answer: string; kind: "ai_marker" | "synthetic_strong" | "editing" | "synthetic_weak" | "none"; note: string
+  alert?: boolean         // show in the contradiction colour
+  badge?: string          // "AI: DETECTED" | "AI SIGNALS: STRONG" | "EDITED: DETECTED" | "AI SIGNALS: WEAK" | "AI: NOT DETECTED"
   badge_detail?: string   // the generator / software, or the "not proof" sentence
 }
 export interface Summary { sentence: string; ai_check?: AiCheck; caption_less?: boolean }

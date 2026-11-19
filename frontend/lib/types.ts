@@ -73,7 +73,7 @@ export type FindingLocation = TimestampLocation | RegionLocation;
 
 export interface Finding {
   id: string;
-  witness: "metadata" | "weather" | "prior_appearance" | "lipsync" | "enf" | "ela";
+  witness: "metadata" | "weather" | "prior_appearance" | "lipsync" | "enf" | "ela" | "synthetic_signals";
   family: "context" | "signal" | "pixels";
   claim_ids: string[];
   status: FindingStatus;

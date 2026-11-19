@@ -378,7 +378,8 @@
             "prior_appearance",
             "lipsync",
             "enf",
-            "ela"
+            "ela",
+            "synthetic_signals"
           ],
           "title": "Witness",
           "type": "string"

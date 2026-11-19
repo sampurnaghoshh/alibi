@@ -35,7 +35,7 @@ Family = Literal["context", "signal", "pixels"]
 Status = Literal["consistent", "contradiction", "inconclusive", "insufficient_signal", "not_applicable"]
 Reliability = Literal["high", "medium", "low"]
 ClaimType = Literal["location", "time", "event", "weather_condition", "speaker", "other"]
-WitnessName = Literal["metadata", "weather", "prior_appearance", "lipsync", "enf", "ela"]
+WitnessName = Literal["metadata", "weather", "prior_appearance", "lipsync", "enf", "ela", "synthetic_signals"]
 
 # Family status after the rule engine folds findings together (§7.2).
 # insufficient_signal folds into inconclusive, so it never appears here.
@@ -64,6 +64,7 @@ WITNESS_FAMILY: dict[str, str] = {
     "lipsync": "signal",
     "enf": "signal",
     "ela": "pixels",
+    "synthetic_signals": "pixels",
 }
 
 # Max reliability per witness (§5). A finding above its cap is a bug.
@@ -74,6 +75,7 @@ WITNESS_MAX_RELIABILITY: dict[str, str] = {
     "lipsync": "medium",
     "enf": "medium",
     "ela": "low",
+    "synthetic_signals": "medium",
 }
 RELIABILITY_RANK: dict[str, int] = {"low": 0, "medium": 1, "high": 2}
 

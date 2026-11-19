@@ -104,7 +104,7 @@ def test_authenticity_ai_marker_beats_everything():
                                "generators": ["DALL-E"]}, "AI-generation marker found: Software = DALL-E 3"))
     au = summarize(inv.findings, inv.claims, unavailable=set())["ai_check"]
     assert au == {"question": "Is this media AI-generated or manipulated?", "kind": "ai_marker",
-                  "answer": "AI-generation marker found (DALL-E)", "note": au["note"],
+                  "answer": "AI-generation marker found (DALL-E)", "note": au["note"], "alert": True,
                   "badge": "AI: DETECTED", "badge_detail": "DALL-E"}
 
 

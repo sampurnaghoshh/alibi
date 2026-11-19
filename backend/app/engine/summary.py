@@ -22,7 +22,7 @@ from typing import Iterable, Optional
 from app import config
 from app.schemas import Claim, Finding
 
-WITNESS_ORDER = ("metadata", "weather", "prior_appearance", "lipsync", "enf", "ela")
+WITNESS_ORDER = ("metadata", "weather", "prior_appearance", "lipsync", "enf", "ela", "synthetic_signals")
 RANK = {"contradiction": 4, "consistent": 3, "inconclusive": 2, "insufficient_signal": 1, "not_applicable": 0}
 SCOPE = {"time": "time", "location": "location", "weather_condition": "event", "event": "event",
          "speaker": "speaker", "other": "claim"}
@@ -89,6 +89,7 @@ def witness_clause(witness: str, status: str, scopes: list[str], claims: list[Cl
             "prior_appearance": f"Frames match an archive clip verified with a different {which}",
             "lipsync": "Lip movement and speech audio are out of step",
             "enf": "The power-grid hum does not match the grid of the stated location",
+            "synthetic_signals": "Several pixel signals typical of generated images agree",
         }.get(witness, f"{label(witness)} contradicts {stated}")
     return {
         "weather": f"Recorded rainfall is consistent with the claimed {event_word(claims)}",
@@ -96,6 +97,7 @@ def witness_clause(witness: str, status: str, scopes: list[str], claims: list[Cl
         "prior_appearance": f"Frames match an archive clip verified with the same {which}",
         "lipsync": "Lip movement and speech audio move together",
         "enf": "The power-grid hum matches the grid of the stated location",
+        "synthetic_signals": "No synthetic-generation signal was found in the pixels",
     }.get(witness, f"{label(witness)} is consistent with {stated}")
 
 
@@ -105,24 +107,46 @@ AUTHENTICITY_NOTE = ("Checked: AI-provenance markers (C2PA, IPTC source type, ge
                      "tags. Most synthetic or edited media carries no marker, so a missing marker is not proof.")
 
 
+SYNTH_NOTE = ("Signal-level indicators (frequency spectrum, sensor noise, camera signature, frame changes, audio "
+              "spectrum), not a trained classifier. Screenshots, compression, editing apps and upscalers can "
+              "produce them too, so they require human review.")
+
+
 def ai_check(findings: list[Finding]) -> dict:
     """The plain answer judges ask for, derived only from the findings (never a verdict on the event):
-    AI-generation marker > editing traces > no manipulation indicators found."""
+    AI-generation marker > strong synthetic signals > editing traces > weak synthetic signal > none found.
+    `alert` = show it in the contradiction colour."""
     meta = [f for f in findings if f.witness == "metadata"]
     ai = [f for f in meta if (f.details or {}).get("ai_markers")]
     if ai:
         gens = list(dict.fromkeys(g for f in ai for g in (f.details.get("generators") or [])))
         what = ", ".join(gens) if gens else ai[0].details["ai_markers"][0].get("label", "metadata marker")
-        return {"question": AUTHENTICITY_QUESTION, "kind": "ai_marker",
+        return {"question": AUTHENTICITY_QUESTION, "kind": "ai_marker", "alert": True,
                 "answer": f"AI-generation marker found ({what})", "note": AUTHENTICITY_NOTE,
                 "badge": "AI: DETECTED", "badge_detail": what}
+    synth = [f for f in findings if f.witness == "synthetic_signals"]
+
+    def reasons(level: str) -> list[str]:
+        return list(dict.fromkeys(r for f in synth if (f.details or {}).get("strength") == level
+                                  for r in f.details.get("reasons") or []))
+
+    strong = reasons("strong")
+    if strong:
+        return {"question": AUTHENTICITY_QUESTION, "kind": "synthetic_strong", "alert": True,
+                "answer": "Strong synthetic-generation signals (" + "; ".join(strong[:3]) + ")",
+                "note": SYNTH_NOTE, "badge": "AI SIGNALS: STRONG", "badge_detail": "; ".join(strong[:4])}
     edits = [f for f in meta if (f.details or {}).get("software_tags") and f.title == "Editing software tag present"]
     if edits:
         tools = list(dict.fromkeys(t for f in edits for t in f.details["software_tags"]))
-        return {"question": AUTHENTICITY_QUESTION, "kind": "editing",
+        return {"question": AUTHENTICITY_QUESTION, "kind": "editing", "alert": True,
                 "answer": f"Editing traces found ({', '.join(tools[:3])})", "note": AUTHENTICITY_NOTE,
                 "badge": "EDITED: DETECTED", "badge_detail": ", ".join(tools[:3])}
-    return {"question": AUTHENTICITY_QUESTION, "kind": "none",
+    weak = reasons("weak")
+    if weak:
+        return {"question": AUTHENTICITY_QUESTION, "kind": "synthetic_weak", "alert": False,
+                "answer": "Weak synthetic signal (" + "; ".join(weak[:3]) + ")",
+                "note": SYNTH_NOTE, "badge": "AI SIGNALS: WEAK", "badge_detail": "; ".join(weak[:4])}
+    return {"question": AUTHENTICITY_QUESTION, "kind": "none", "alert": False,
             "answer": "No manipulation indicators found", "note": AUTHENTICITY_NOTE,
             "badge": "AI: NOT DETECTED", "badge_detail": NOT_DETECTED_NOTE}
 

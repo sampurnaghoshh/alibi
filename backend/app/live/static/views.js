@@ -17,7 +17,7 @@
 
   var C = { text: "#E8ECEF", text2: "#929DA7", border: "#303840", surface: "#15191D", elevated: "#1C2227",
             contra: "#D96B68", supports: "#69B88A", inconc: "#929CAA", accent: "#83B6D1", bg: "#0D1012" };
-  var ORDER = ["map", "time", "frames", "rain", "grid", "lipsync", "enf", "ela", "provenance"];
+  var ORDER = ["map", "time", "frames", "synthetic", "rain", "grid", "lipsync", "enf", "ela", "provenance"];
   var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   var NS = ["http", "//www.w3.org/2000/svg"].join(":");   // the SVG namespace: an identifier, nothing is fetched
 
@@ -411,6 +411,25 @@
     return c;
   }
 
+  // ------------------------------------------------------------------ synthetic signals
+  function buildSynthetic(state) {   // every image the synthetic-signals witness saved, with its label
+    var evs = [];
+    findings(state, "synthetic_signals").forEach(function (f) {
+      (f.evidence || []).forEach(function (e) { if (e.kind === "artifact" && /\.png$/.test(e.ref)) evs.push(e); });
+    });
+    if (!evs.length) return null;
+    var c = card("Synthetic signals", "spectrum, noise, frame change and audio spectrum; indicators, never a verdict");
+    evs.forEach(function (e) {
+      var img = el("img", "vimg");
+      img.src = fileUrl(state.id, e.ref);
+      img.alt = e.label;
+      img.title = e.label;
+      c.appendChild(img);
+      c.appendChild(el("div", "vsub", e.label));
+    });
+    return c;
+  }
+
   // ------------------------------------------------------------------ provenance
   function buildProvenance(state) {
     if (!state.inputs.length && !state.log.length) return null;
@@ -445,6 +464,7 @@
                                           "Power-grid hum spectrogram", "display only, never a verdict"); },
     ela: function (s) { return buildImage(s, "ela", function (r) { return /\.png$/.test(r); },
                                           "Error-level heatmap", "visual aid only"); },
+    synthetic: buildSynthetic,
     provenance: buildProvenance
   };
 
@@ -459,6 +479,7 @@
       lipsync: f("lipsync") + JSON.stringify(Object.keys(series).map(function (k) { return typeof series[k]; })),
       enf: f("enf"),
       ela: f("ela"),
+      synthetic: f("synthetic_signals"),
       provenance: JSON.stringify(state.inputs) + state.log.length
     }[key];
   }

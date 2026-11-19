@@ -93,7 +93,7 @@ def test_async_returns_immediately_then_streams_real_events(slow_lipsync):
     assert [i for i, _, _ in events] == list(range(len(events)))            # ids are line numbers
     assert names[0] == "file_received" and names[1] == "claims_extracted"
     assert names[-3:] == ["assessment_computed", "graph_ready", "done"]
-    assert names.count("witness_started") == 6 and names.count("witness_completed") == 6
+    assert names.count("witness_started") == 7 and names.count("witness_completed") == 7
 
     by = {e: d for _, e, d in events}
     assert [c["source"]["text"] for c in by["claims_extracted"]["data"]["claims"]] == \
@@ -169,7 +169,7 @@ def test_rerun_reuses_files_and_caption_independent_findings():
     assert not any(h.event == "witness_started" and h.detail == "ela" for h in child.history)
     rerun = {h.detail for h in child.history if h.event == "witness_started"}
     assert rerun == {"metadata", "weather", "prior_appearance", "enf"}     # ENF depends on the claimed country
-    assert set(config.RERUN_REUSED) == {"ela", "lipsync"}
+    assert set(config.RERUN_REUSED) == {"ela", "lipsync", "synthetic_signals"}
     assert [f.witness for f in child.findings] == [f["witness"] for f in parent["findings"]]   # display order
     rows = {s["id"]: s for s in client.get("/api/investigations").json()}
     assert rows[child.id]["parent_id"] == parent["id"]

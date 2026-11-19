@@ -55,7 +55,8 @@ RERUN_HINT = "Reply to this message with a corrected caption to re-check the sam
 CLAIM_LABELS = {"location": "Location", "time": "Time", "weather_condition": "Event", "event": "Event",
                 "speaker": "Speaker", "other": "Claim"}
 WITNESS_LABELS = [("metadata", "Metadata"), ("weather", "Weather"), ("prior_appearance", "Prior appearance"),
-                  ("lipsync", "Lip-sync"), ("enf", "Power-grid hum"), ("ela", "ELA")]
+                  ("lipsync", "Lip-sync"), ("enf", "Power-grid hum"), ("ela", "ELA"),
+                  ("synthetic_signals", "Synthetic signals")]
 COUNT_LABELS = [("contradiction", "contradiction", "contradictions"), ("consistent", "consistent", "consistent"),
                 ("inconclusive", "inconclusive", "inconclusive"),
                 ("insufficient_signal", "insufficient signal", "insufficient signal"),
@@ -75,11 +76,13 @@ LEGEND = "⚠️ contradiction · ✅ consistent · ❔ inconclusive · ➖ not 
 def progress(state: dict[str, str], done: bool = False) -> str:
     """state: witness -> icon (see mark()); witnesses not finished yet show '…'."""
     head = "🔍 Analysis complete: " if done else "🔍 Checking: "
-    return head + witness_line(state)
+    return head + witness_line(state, done)
 
 
-def witness_line(state: dict[str, str]) -> str:
-    return " · ".join(f"{label} {state.get(name, ICON_PENDING)}" for name, label in WITNESS_LABELS)
+def witness_line(state: dict[str, str], done: bool = False) -> str:
+    """Witnesses without a result show '…' while running, and '➖' once the run is complete."""
+    missing = ICON_NOT_APPLICABLE if done else ICON_PENDING
+    return " · ".join(f"{label} {state.get(name, missing)}" for name, label in WITNESS_LABELS)
 
 
 def mark(findings: list[dict]) -> str:
@@ -126,7 +129,7 @@ def final(inv: dict, rerun: bool = False) -> str:
         lines = [head + check["question"] + " " + check["answer"],
                  "No caption to check, so place, time and weather checks were skipped."]
     lines += [counts_line(a["counts"]),
-             witness_line(marks_from_findings(inv["findings"])), LEGEND]
+             witness_line(marks_from_findings(inv["findings"]), done=True), LEGEND]
     contradictions = [f for f in inv["findings"] if f["status"] == "contradiction"]
     if contradictions:
         lines.append("")

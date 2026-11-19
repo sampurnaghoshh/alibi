@@ -468,9 +468,9 @@ def render_report(inv: Investigation, store: Optional[RunStore] = None) -> str:
 <p class="no-print muted">Use your browser's Print → Save as PDF to keep a copy.</p>
 
 <h2>Assessment</h2>
-<div class="badge {'b-hit' if auth['kind'] != 'none' else 'b-none'}"><div class="badge-main">{e(auth["badge"])}</div>
+<div class="badge {'b-hit' if auth.get('alert') else 'b-none'}"><div class="badge-main">{e(auth["badge"])}</div>
 <div class="badge-detail">{e(auth["badge_detail"])}</div></div>
-<p class="auth"><span class="muted">{e(auth["question"])}</span> <b class="{'s-contradiction' if auth['kind'] != 'none' else ''}">{e(auth["answer"])}</b><br>
+<p class="auth"><span class="muted">{e(auth["question"])}</span> <b class="{'s-contradiction' if auth.get('alert') else ''}">{e(auth["answer"])}</b><br>
 <span class="muted" style="font-size:8.5pt">{e(auth["note"])}</span></p>
 <div class="headline">{e(auth["answer"]) if sm["caption_less"] else e(a.headline_text)}</div>
 {'<p class="muted">No caption was given, so place, time and weather checks were skipped. Rule-engine headline: '
