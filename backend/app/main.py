@@ -53,6 +53,7 @@ app = FastAPI(title="ALIBI", description="Explainable multimedia verification", 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=config.CORS_ORIGINS,
+    allow_origin_regex=config.CORS_ORIGIN_REGEX,      # *.vercel.app frontend, *.trycloudflare.com tunnel
     allow_methods=["*"],
     allow_headers=["*"],
 )

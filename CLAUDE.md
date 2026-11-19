@@ -420,6 +420,12 @@ alibi/
 
 Synchronous is fine for the demo (target < 20 s for a 15 s clip). The frontend **reveals findings one by one** with a staggered animation for the demo effect.
 
+### Deployment (Vercel + laptop tunnel; current)
+- **Frontend:** Vercel, root directory `frontend`, static export; `NEXT_PUBLIC_API_URL` = the laptop's Cloudflare quick-tunnel URL, fixed at build time (new tunnel URL -> update the variable and redeploy). When the API is unreachable the pages show the calm offline banner (`frontend/app/OfflineBanner.tsx`), never raw errors.
+- **Backend:** `scripts\serve_prod.ps1 [-Tunnel]`: uvicorn on 127.0.0.1:8000, one worker, no reload; `-Tunnel` starts `cloudflared tunnel --url http://localhost:8000`.
+- **CORS:** `config.CORS_ORIGIN_REGEX` allows `https://*.vercel.app` and `https://*.trycloudflare.com`; `ALIBI_CORS_ORIGINS` adds exact origins (`tests/test_cors.py`).
+- Hugging Face free Docker Spaces are no longer available, so the one-container setup below is kept for any Docker host only.
+
 ### Deployment (one container)
 - `Dockerfile` (repo root): Node stage builds the frontend as a static export with `NEXT_PUBLIC_API_URL=""` (same-origin), then `python:3.12-slim` + ffmpeg + exiftool runs `deploy/start.sh`: uvicorn, **one worker, no reload**, port 7860. The API serves `frontend/out` at `/` after every API route (`config.FRONTEND_DIR`).
 - Baked in: `data/archive`, the face model, demo Cases A/B, the warmed weather cache (`deploy/seed-cache/` -> `data/cache/`). `ALIBI_LLM_PROVIDER=none`. Never secrets (`.dockerignore` drops `.env`, runs and the bot's chat list).

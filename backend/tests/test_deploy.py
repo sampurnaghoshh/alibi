@@ -76,3 +76,25 @@ def test_licence_and_notices_present():
     notices = (REPO / "THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8")
     for item in ("Cytoscape", "qrcode-generator", "Inter", "IBM Plex Mono", "Lucide", "MediaPipe", "Open-Meteo", "CC BY 4.0"):
         assert item in notices, item
+
+
+# --- Vercel frontend + laptop backend behind a Cloudflare quick tunnel ------------------------------
+
+def test_serve_prod_is_single_worker_without_reload():
+    ps = (REPO / "scripts" / "serve_prod.ps1").read_text(encoding="utf-8")
+    command = ps[ps.index("-m uvicorn"):]
+    assert "--workers 1" in command and "--reload" not in command
+    assert "--port $Port" in command and "[int]$Port = 8000" in ps
+    assert "cloudflared" in ps and "tunnel" in ps
+
+
+def test_vercel_config_and_self_contained_frontend():
+    vercel = json.loads((REPO / "frontend" / "vercel.json").read_text(encoding="utf-8"))
+    assert vercel["framework"] == "nextjs"
+    for path in list((REPO / "frontend" / "app").rglob("*.ts*")) + list((REPO / "frontend" / "lib").rglob("*.ts")):
+        src = path.read_text(encoding="utf-8")
+        assert not re.search(r"""from ["']\.\./\.\./""", src), f"{path.name} imports from outside frontend/"
+    api = (REPO / "frontend" / "lib" / "api.ts").read_text(encoding="utf-8")
+    assert "process.env.NEXT_PUBLIC_API_URL" in api
+    assert "The analysis server is offline right now. The live demo runs on our forensic workstation." in api
+    assert "LIVE_DESK_URL = `${API_URL}/live`" in api

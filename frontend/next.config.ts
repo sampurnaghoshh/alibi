@@ -1,15 +1,16 @@
 import type { NextConfig } from "next";
-import path from "node:path";
 
 const nextConfig: NextConfig = {
-  // Static export (frontend/out): the FastAPI backend serves it, so one URL serves the frontend,
-  // /live and /api/*. trailingSlash makes /investigation/ an index.html the backend can serve as is.
+  // Static export (frontend/out): hosted on Vercel (root directory: frontend) or served by the FastAPI
+  // backend itself. trailingSlash makes /investigation/ an index.html any static host can serve.
+  // The frontend is self-contained (nothing imported from outside frontend/), so Vercel can build it
+  // with "frontend" as the root directory.
   output: "export",
   trailingSlash: true,
   images: { unoptimized: true },
-  outputFileTracingRoot: path.join(__dirname, ".."),
+  outputFileTracingRoot: __dirname,
   turbopack: {
-    root: path.join(__dirname, ".."),
+    root: __dirname,
     rules: {
       "*.css": {
         loaders: ["@tailwindcss/turbopack"],

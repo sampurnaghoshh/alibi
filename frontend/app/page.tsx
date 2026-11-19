@@ -4,11 +4,15 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import {
+  ApiOffline,
   getDemoCases,
+  isApiOnline,
+  LIVE_DESK_URL,
   runDemoCase,
   uploadInvestigation,
   type DemoCase,
 } from "@/lib/api";
+import OfflineBanner from "./OfflineBanner";
 
 /** Today's date in the browser's own time zone, as YYYY-MM-DD (what <input type="date"> uses). */
 function localToday(): string {
@@ -30,6 +34,7 @@ export default function Home() {
   const [error, setError] = useState("");
   const [dragging, setDragging] = useState(false);
   const [demoError, setDemoError] = useState("");
+  const [offline, setOffline] = useState(false);
 
   // Default "Shared on" to today. Set after mount: this page is pre-rendered at build time, so a
   // value computed during rendering would be the build date.
@@ -38,12 +43,15 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    isApiOnline().then((online) => setOffline(!online));
     getDemoCases()
-      .then(setDemoCases)
+      .then((cases) => {
+        setDemoCases(cases);
+        setOffline(false);
+      })
       .catch((err) => {
-        setDemoError(
-          err instanceof Error ? err.message : "Could not load demo cases."
-        );
+        if (err instanceof ApiOffline) setOffline(true);
+        else setDemoError(err instanceof Error ? err.message : "Could not load demo cases.");
       });
   }, []);
 
@@ -79,11 +87,8 @@ export default function Home() {
 
       router.push(`/investigation/?id=${encodeURIComponent(investigation.id)}`);
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Investigation could not be started."
-      );
+      if (err instanceof ApiOffline) setOffline(true);
+      else setError(err instanceof Error ? err.message : "Investigation could not be started.");
       setLoading(false);
     }
   }
@@ -98,9 +103,8 @@ export default function Home() {
       const investigation = await runDemoCase(demo.name);
       router.push(`/investigation/?id=${encodeURIComponent(investigation.id)}`);
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Demo investigation failed."
-      );
+      if (err instanceof ApiOffline) setOffline(true);
+      else setError(err instanceof Error ? err.message : "Demo investigation failed.");
       setActiveDemo(null);
     }
   }
@@ -119,11 +123,19 @@ export default function Home() {
               MEDIA CONTEXT INVESTIGATION
             </p>
           </div>
-          <span className="text-xs text-zinc-500">Evidence-led analysis</span>
+          <a href={LIVE_DESK_URL} className="text-xs text-[#83B6D1] hover:text-[#9CC8DF]">
+            Live Desk
+          </a>
         </div>
       </header>
 
       <div className="mx-auto max-w-3xl px-6 py-14">
+        {offline && (
+          <div className="mb-8">
+            <OfflineBanner />
+          </div>
+        )}
+
         <div className="mb-10">
           <p className="mb-3 text-xs font-medium tracking-[0.2em] text-[#83B6D1]">
             NEW INVESTIGATION
@@ -312,7 +324,7 @@ export default function Home() {
               </button>
             ))}
 
-            {demoCases.length === 0 && !demoError && (
+            {demoCases.length === 0 && !demoError && !offline && (
               <p className="text-xs text-zinc-500">Loading demo cases...</p>
             )}
           </div>

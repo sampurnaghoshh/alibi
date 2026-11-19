@@ -6,6 +6,8 @@ import { LoaderCircle } from "lucide-react";
 import { getInvestigationState, type InvestigationState } from "@/lib/api";
 import InvestigationView, { Problem } from "./InvestigationView";
 import StillRunning from "./StillRunning";
+import OfflineBanner from "../OfflineBanner";
+import Link from "next/link";
 
 /**
  * /investigation/?id=inv_... : the app is a static export (one URL serves the frontend, /live and
@@ -53,6 +55,18 @@ function InvestigationLoader() {
   if (state.status === "running") return <StillRunning id={id} onDone={reload} />;   // 202: poll until done
   if (state.status === "missing") {
     return <Problem title="Investigation not found" message={state.message} />;
+  }
+  if (state.status === "offline") {
+    return (
+      <main className="min-h-screen bg-[#0D1012] text-zinc-100">
+        <div className="mx-auto max-w-xl px-6 py-32">
+          <OfflineBanner />
+          <Link href="/" className="mt-8 inline-block text-sm text-[#83B6D1] hover:text-[#9CC8DF]">
+            Back to the upload page
+          </Link>
+        </div>
+      </main>
+    );
   }
   if (state.status === "error") {
     return <Problem title="This investigation could not be shown" message={state.message} />;

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { LoaderCircle } from "lucide-react";
-import { API_URL } from "@/lib/api";
+import { API_URL, LIVE_DESK_URL } from "@/lib/api";
 
 /**
  * Shown while GET /api/investigations/{id} answers 202 {status: "running"} (an async run, e.g. from
@@ -51,7 +51,7 @@ export default function StillRunning({ id, onDone }: { id: string; onDone: () =>
         </p>
         <div className="mt-8 flex gap-4 text-sm">
           <a
-            href={`${API_URL}/live?id=${encodeURIComponent(id)}`}
+            href={`${LIVE_DESK_URL}?id=${encodeURIComponent(id)}`}
             className="text-[#83B6D1] hover:text-[#9CC8DF]"
           >
             Watch it on the Live Desk
