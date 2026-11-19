@@ -1,0 +1,3 @@
+# Vendored third-party files stay byte-for-byte as downloaded (their SHA-256s are recorded in
+# backend/app/live/static/README.md), so git must not rewrite their line endings.
+backend/app/live/static/vendor/** -text
