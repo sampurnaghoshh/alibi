@@ -23,7 +23,7 @@ from threading import Event
 from typing import Optional
 
 from app import config
-from app.bot import texts
+from app.bot import gps, texts
 from app.bot.api import AlibiClient, AlibiError
 from app.bot.state import BotState
 from app.bot.telegram import TelegramClient, TelegramError
@@ -135,20 +135,30 @@ class Bot:
             log.warning("sendMessage to %s failed: %s", chat_id, exc)
             return None
 
-    def _claims_or_example(self, chat_id: int, mid: int, caption: str, posted: datetime) -> bool:
-        """Instant feedback from the caption alone. False (and an example) if there is nothing to check."""
-        self._say(chat_id, texts.RECEIVED, mid)
+    def _claims_or_example(self, chat_id: int, mid: int, caption: str, posted: datetime) -> Optional[dict]:
+        """Instant feedback from the caption alone. Returns the 'Received' message (so it can be
+        edited later), or None (after sending an example) if there is nothing to check."""
+        received = self._say(chat_id, texts.RECEIVED, mid) or {}
         claims = extract_claims(caption, posted) if caption.strip() else []
         if not claims:
             self._say(chat_id, texts.NO_CLAIMS, mid)
-            return False
+            return None
         self._say(chat_id, texts.claims_line(claims), mid)
-        return True
+        return received
+
+    def _gps_tip(self, chat_id: int, received: dict, content: bytes, name: str) -> None:
+        """If the file has no GPS location, add the 'turn on Location' tip to the Received message."""
+        if received.get("message_id") and gps.has_gps(content, name) is False:
+            try:
+                self.tg.edit_message(chat_id, received["message_id"], texts.RECEIVED + "\n\n" + texts.GPS_TIP)
+            except TelegramError as exc:
+                log.warning("GPS tip edit failed: %s", exc)
 
     def _case(self, msg: dict, media: dict) -> None:
         chat_id, mid = msg["chat"]["id"], msg["message_id"]
         caption, posted = msg.get("caption") or "", self._posted_at(msg)
-        if not self._claims_or_example(chat_id, mid, caption, posted):
+        received = self._claims_or_example(chat_id, mid, caption, posted)
+        if received is None:
             return
         if media["kind"] == "video":
             self._say(chat_id, texts.COMPRESSED_VIDEO, mid)
@@ -165,6 +175,8 @@ class Bot:
                 return self._say(chat_id, texts.TOO_BIG.format(size="over 20"), mid)
             log.warning("download failed: %s", exc)
             return self._say(chat_id, texts.DOWNLOAD_FAILED, mid)
+        if media["kind"] == "file":      # compressed video/photo already got the "send as a File" warning
+            self._gps_tip(chat_id, received, content, media["name"])
         try:
             inv_id = self.api.start(media["name"], content, media["mime"], caption, posted.isoformat())
         except AlibiError as exc:
@@ -174,7 +186,7 @@ class Bot:
 
     def _rerun(self, msg: dict, parent_id: str, caption: str) -> None:
         chat_id, mid, posted = msg["chat"]["id"], msg["message_id"], self._posted_at(msg)
-        if not self._claims_or_example(chat_id, mid, caption, posted):
+        if self._claims_or_example(chat_id, mid, caption, posted) is None:
             return
         try:
             inv_id = self.api.rerun(parent_id, caption, posted.isoformat())
@@ -202,7 +214,7 @@ class Bot:
                 data = payload.get("data") or {}
                 if event in ("witness_completed", "witness_failed"):
                     marks[data.get("witness", "?")] = (texts.mark(data.get("findings") or [])
-                                                       if event == "witness_completed" else "?")
+                                                       if event == "witness_completed" else texts.ICON_INCONCLUSIVE)
                     update_progress()
                 elif event in ("done", "failed"):
                     outcome, error = event, data.get("error") or payload.get("detail", "")

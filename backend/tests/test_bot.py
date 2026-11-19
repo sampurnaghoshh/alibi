@@ -11,7 +11,7 @@ import httpx
 import pytest
 
 from app import config
-from app.bot import texts
+from app.bot import gps, texts
 from app.bot.__main__ import RedactingFormatter
 from app.bot.api import DOWN, AlibiClient
 from app.bot.handler import Bot
@@ -110,6 +110,7 @@ def sse_body(inv_id: str) -> bytes:
 def world(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "TELEGRAM_ALLOWED_CHAT_IDS", {CHAT})
     monkeypatch.setattr(config, "TELEGRAM_PASSCODE", "open-sesame")
+    monkeypatch.setattr(gps, "has_gps", lambda content, name="": None)   # tests set True/False when it matters
     w = World()
     http = httpx.Client(transport=httpx.MockTransport(w.handle))
     w.bot = Bot(TelegramClient(TOKEN, http=http, base="https://tg.test", sleep=lambda s: None),
@@ -150,16 +151,17 @@ def test_file_with_caption_full_flow(world):
     posted = datetime.fromtimestamp(DATE, tz=config.DEFAULT_TZ).isoformat()
     assert CASE_A.encode() in post[3] and posted.encode() in post[3] and b'filename="clip.mp4"' in post[3]
 
-    # one progress message, edited as witnesses finish; contradiction marked
+    # one progress message, edited as witnesses finish; icons by STATUS
     edits = world.edits()
     assert len(edits) == 7
-    assert edits[-1].startswith("🔍 Analysis complete:")
-    assert "Weather ⚠" in edits[-1] and "Prior appearance ⚠" in edits[-1]
-    assert "Metadata ✓" in edits[-1] and "Lip-sync –" in edits[-1]
+    assert edits[0].startswith("🔍 Checking:") and "…" in edits[0]
+    line = ("Metadata ❔ · Weather ⚠️ · Prior appearance ⚠️ · Lip-sync ➖ · Power-grid hum ❔ · ELA ❔")
+    assert edits[-1] == "🔍 Analysis complete: " + line
 
     final = sent[3]
     assert final.startswith("🧾 " + FIXTURE["assessment"]["headline_text"])
     assert "2 contradictions · 2 inconclusive · 1 insufficient signal · 1 not applicable" in final
+    assert line in final and texts.LEGEND in final
     assert "• Frames match a clip verified as recorded in Pune on 25 Jul 2024: 9 of 14" in final
     assert "• Recorded rainfall does not support the stated flooding: 0.0 mm" in final
     assert texts.HUMAN_REVIEW in final
@@ -170,6 +172,55 @@ def test_file_with_caption_full_flow(world):
     assert all(b.get("reply_parameters", {}).get("message_id") in (1, None) for m, b, _ in world.tg if m == "sendMessage")
     saved = json.loads(world.state_file.read_text())
     assert INV in saved["results"].values()
+
+
+@pytest.mark.parametrize("statuses,icon", [
+    (["contradiction", "consistent"], "⚠️"),
+    (["consistent", "inconclusive"], "✅"),        # metadata: date consistent + GPS inconclusive
+    (["inconclusive"], "❔"),
+    (["insufficient_signal"], "❔"),
+    (["not_applicable"], "➖"),
+    ([], "❔"),
+])
+def test_icon_by_status(statuses, icon):
+    assert texts.mark([{"status": s} for s in statuses]) == icon
+
+
+def test_gps_tip_when_file_has_no_location(world, monkeypatch):
+    monkeypatch.setattr(gps, "has_gps", lambda content, name="": False)
+    world.bot.handle_update(update(caption=CASE_A, document=DOC))
+    received_id = next(r for r in world.tg if r[0] == "sendMessage")   # first message the bot sent
+    tip = [b for m, b, _ in world.tg if m == "editMessageText" and texts.GPS_TIP in b["text"]]
+    assert len(tip) == 1 and tip[0]["text"] == texts.RECEIVED + "\n\n" + texts.GPS_TIP
+    assert tip[0]["message_id"] == 501 and received_id                 # the "Received" message is edited
+    assert "Options → turn on Location" in texts.HELP
+
+
+def test_no_gps_tip_when_location_present_or_compressed(world, monkeypatch):
+    monkeypatch.setattr(gps, "has_gps", lambda content, name="": True)
+    world.bot.handle_update(update(caption=CASE_A, document=DOC))
+    monkeypatch.setattr(gps, "has_gps", lambda content, name="": False)
+    video = {"file_id": "V1", "file_unique_id": "UV", "mime_type": "video/mp4", "file_size": 2_000_000}
+    world.bot.handle_update(update(mid=2, caption=CASE_A, video=video))      # already warned to send as File
+    assert not any(texts.GPS_TIP in t for t in world.edits())
+
+
+@pytest.mark.skipif(not __import__("shutil").which("exiftool"), reason="exiftool not installed")
+def test_has_gps_reads_real_files(tmp_path):
+    import io
+    import subprocess
+
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", (32, 24), (90, 120, 150)).save(buf, format="JPEG")
+    plain = buf.getvalue()
+    tagged = tmp_path / "gps.jpg"
+    tagged.write_bytes(plain)
+    subprocess.run(["exiftool", "-q", "-overwrite_original", "-GPSLatitude=12.97", "-GPSLatitudeRef=N",
+                    "-GPSLongitude=77.59", "-GPSLongitudeRef=E", str(tagged)], check=True)
+    assert gps.has_gps(plain, "plain.jpg") is False
+    assert gps.has_gps(tagged.read_bytes(), "gps.jpg") is True
+    assert gps.has_gps(b"", "empty.jpg") is None
 
 
 def test_compressed_video_gets_a_warning(world):
