@@ -6,7 +6,7 @@
 
 **Explainable multimodal media verification.** Team **“Pick Me”**, SapthaHacks 2026 (InnovEdge), **Problem Statement 04: TruthLens**
 
-![PS04 TruthLens](https://img.shields.io/badge/PS04-TruthLens-83B6D1) ![Tests](https://img.shields.io/badge/tests-370%20passing-69B88A) ![False alarms](https://img.shields.io/badge/false%20contradictions%20on%20controls-0-69B88A) ![Runtime cost](https://img.shields.io/badge/runtime%20cost-%E2%82%B90-83B6D1) ![License](https://img.shields.io/badge/license-MIT-929CAA)
+![PS04 TruthLens](https://img.shields.io/badge/PS04-TruthLens-83B6D1) ![Tests](https://img.shields.io/badge/tests-389%20passing-69B88A) ![False alarms](https://img.shields.io/badge/false%20contradictions%20on%20controls-0-69B88A) ![Runtime cost](https://img.shields.io/badge/runtime%20cost-%E2%82%B90-83B6D1) ![License](https://img.shields.io/badge/license-MIT-929CAA)
 
 **[Live app](https://alibi-xi.vercel.app)** · **[Demo video](LINKEDIN_VIDEO_URL)** · **[Setup guide](docs/SETUP.md)**
 
@@ -31,10 +31,13 @@ ALIBI treats every kind of evidence as a **witness**: the caption, the file's me
 Upload any **image, video or audio** file, with or without a caption, and ALIBI answers the question first: **"Is this media AI-generated or manipulated?"**
 
 - **AI: DETECTED** when the file carries an AI-provenance marker: C2PA content credentials naming an AI tool, IPTC `DigitalSourceType = trainedAlgorithmicMedia / compositeSynthetic`, or generator tags (DALL·E / ChatGPT, Midjourney, Adobe Firefly, Stable Diffusion, Imagen, Gemini). ALIBI names the exact tool.
+- **AI SIGNALS: STRONG / WEAK** from the synthetic-signals witness: periodic peaks in the noise-residual spectrum, missing sensor noise and the camera signature (images), abrupt frame changes and flicker (video), and cloned-speech indicators in the audio (near-digital silence, a hard bandwidth limit, spectral flatness). Signals, never a verdict, with the reasons shown.
 - **EDITED: DETECTED** when editing-software traces are present.
-- **AI: NOT DETECTED** when neither is found. ALIBI never calls media "real": most AI-generated media carries no marker, so a missing marker is reported as exactly that.
+- **AI: NOT DETECTED** when none of these is found. ALIBI never calls media "real": most AI-generated media carries no marker, so a missing marker is reported as exactly that.
 
-With a caption, ALIBI then cross-examines the **story** (place, time, event) against the evidence.
+It also **localises possible pasted-in regions**: a block-wise noise-inconsistency map boxes the region whose noise level differs most from the rest of the picture, cross-checked against error-level analysis.
+
+With a caption, ALIBI then cross-examines the **story** (place, time, event) against the evidence. **Spoken claims count too:** the first 30 s of speech are transcribed on the device (faster-whisper tiny, CPU), and place/time/event claims in the transcript are checked like caption claims, each tied to its exact characters in the transcript.
 
 ## Results we measured
 
@@ -43,15 +46,15 @@ With a caption, ALIBI then cross-examines the **story** (place, time, event) aga
 | **Case A: genuine clip, false caption** ("Massive flooding in Chennai yesterday evening") | **Prior appearance: contradiction (high).** 12 of 12 sampled frames match a clip verified as recorded in Jalahalli, Bengaluru on 5 Oct 2026: **296 km and 44 days** from the claim. **Weather: contradiction (medium).** 0.0 mm of rain in Chennai that evening, at all 4 surrounding points, and over the previous 72 h. → *"The stated context is not supported by the available evidence."* |
 | **Live test: a lie on a fresh phone clip** ("Heavy flood in Delhi yesterday", recorded minutes earlier in Bengaluru, sent via Telegram) | **Metadata: contradiction.** The capture time falls outside the claimed window (18.6 h after it in our replay). **Weather: contradiction.** No recorded rain in Delhi. Total: **≈ 6 s** on a laptop, streamed live. |
 | **Weather witness isn't biased** | The same witness confirms the real Chennai floods of 2 Dec 2015 (**57.9 mm** in the window, **119.2 mm** over 72 h → consistent). |
-| **Validation** | **370 automated tests** · **0 false contradictions** on genuine control clips never used for tuning · **≈ 3.6 s** median per investigation (57 runs) · **₹0** runtime cost, offline-capable |
+| **Validation** | **389 automated tests** · **0 false contradictions** on genuine control clips never used for tuning · **≈ 3.6 s** median per investigation (57 runs) · **₹0** runtime cost, offline-capable |
 
 ## How it works
 
 ```mermaid
 flowchart LR
   U[Upload page / Telegram bot] --> I[Ingest<br/>SHA-256 + read-only originals<br/>+ chain-of-custody log]
-  I --> C[Claim extraction<br/>place · time · event · speaker<br/>tied to exact caption characters]
-  C --> W{6 witnesses<br/>in parallel}
+  I --> C[Claim extraction<br/>caption + speech transcript<br/>place · time · event · speaker<br/>tied to exact characters]
+  C --> W{7 witnesses<br/>in parallel}
   W --> F[Findings validated against<br/>a strict evidence contract]
   F --> R[Deterministic rule engine<br/>evidence families<br/>correlated evidence counted once]
   R --> G[Evidence graph]
@@ -62,7 +65,7 @@ flowchart LR
 
 **The LLM never decides truth.** Verdicts come from deterministic code and transparent rules. The default runtime uses no LLM at all (rules + templates), works offline and costs nothing.
 
-### The six witnesses
+### The seven witnesses
 
 | Witness | Family | What it checks | Technique | Max reliability |
 |---|---|---|---|---|
@@ -72,6 +75,7 @@ flowchart LR
 | Lip-sync indicator | Signal | Do mouth movements match the audio? | MediaPipe face landmarks vs audio envelope; windowed cross-correlation | Low (never accuses) |
 | Power-grid hum (ENF) | Signal | 50/60 Hz mains hum in the audio | STFT spectral SNR | Display only |
 | Error-level analysis | Pixels | Compression differences in images and keyframes | JPEG re-save difference heatmap | Low (visual aid) |
+| Synthetic signals | Pixels | Traces of generation and compositing in images, video and speech | Noise-residual spectrum, sensor noise, camera signature, splice map, frame-change spikes, audio spectrum | Medium (contradiction only when both pixel signals are strong and no camera fields exist) |
 
 ### How the rule engine decides
 
@@ -122,9 +126,16 @@ Every investigation exports a printable report covering everything PS04 §05 ask
 - **Telegram:** send a file (5–8 s clip or image) **as a File**, with or without a caption, to the team's verification bot and get the findings and the report back.
 - **Run it yourself:** see [docs/SETUP.md](docs/SETUP.md).
 
+## Known limitations
+
+- **No trained AI-image classifier.** The two permissively licensed ONNX detectors we tried did not qualify: one failed calibration (genuine control frames scored higher than our AI images), and the other could not be downloaded and verified within our time limit on venue Wi-Fi. AI detection rests on provenance markers and signal-level indicators.
+- **Signal-level AI indicators are weak on re-encoded images.** On our 5 AI test images, 4 show "AI SIGNALS: WEAK" and none "STRONG": re-saving as WebP/JPEG removes the spectral traces. The noise thresholds are tuned on very few genuine photos.
+- **Speech-to-text** uses the small "tiny" model on the first 30 s; it can mishear place names, and without the downloaded model it is skipped with a stated limitation.
+- **Lip-sync and power-grid hum never accuse** (see Honesty by design), and the verified archive is small.
+
 ## Tech stack
 
-**Backend:** Python 3.12, FastAPI, Pydantic v2 · **Analysis:** OpenCV, MediaPipe, librosa, imagehash, ExifTool, FFmpeg · **Data:** Open-Meteo · **Frontend:** Next.js, TypeScript, Tailwind, React Flow · **Live Desk:** vanilla JS + Cytoscape.js (fully offline) · **Bot:** Telegram Bot API · **Deploy:** Vercel (frontend) + workstation backend through a Cloudflare tunnel; Dockerfile included.
+**Backend:** Python 3.12, FastAPI, Pydantic v2 · **Analysis:** OpenCV, MediaPipe, librosa, imagehash, ExifTool, FFmpeg, faster-whisper · **Data:** Open-Meteo · **Frontend:** Next.js, TypeScript, Tailwind, React Flow · **Live Desk:** vanilla JS + Cytoscape.js (fully offline) · **Bot:** Telegram Bot API · **Deploy:** Vercel (frontend) + workstation backend through a Cloudflare tunnel; Dockerfile included.
 
 ## Roadmap
 

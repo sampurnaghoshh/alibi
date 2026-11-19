@@ -97,6 +97,7 @@ Witness → family (fixed):
   - `precision` is one of `hour | part_of_day | day | week | month | year`. Use `part_of_day` for "evening" / "morning" / "night" windows (e.g. "yesterday evening" → `start` 17:00, `end` 21:00, `precision: "part_of_day"`).
 - `normalized` for `weather_condition`/`event`: `{ "condition": "flood" }` from the set `flood | heavy_rain | rain | dry | storm | other`.
 - `extracted_by`: `"llm" | "rules"`.
+- `source.field`: `"caption"` or `"transcript"` (spoken claims, §6.9): a transcript claim's span points into `Investigation.transcript.text`.
 
 ### 4.3 Finding
 ```json
@@ -173,6 +174,7 @@ Witness → family (fixed):
 - `claim_ids`, location `file_id`s, `weak_indicators` and graph edges must point at things that exist, and `assessment.counts` must match the findings.
 - After changing `schemas.py`, regenerate the JSON Schema: `cd backend; python -m app.schemas`. `pytest` fails if it is stale.
 
+- `transcript` (Investigation): `null` (no audio/video input) or `{status: ok|no_speech|unavailable|failed, file_id, text, language, model, span_s, note}`; logged as the `transcribed` event before `claims_extracted`.
 - `parent_id` (Investigation and InvestigationSummary): `null`, or on a caption re-run (§14) the id of the investigation whose stored files were re-used.
 - `history` stays `{ts, event, detail}`. The run's `history.jsonl` additionally stores a `data` payload per line for the live event stream (§14).
 
@@ -334,6 +336,11 @@ All thresholds below are **starting values. Calibrate them on genuine clips** an
 - Images: noise-residual spectrum peaks (up-sampling grids), missing sensor noise in flat blocks, camera signature (JPEG tables, make/model/lens; context only). Contradiction (medium) only when both pixel signals are strong and no camera fields exist; any pixel signal -> inconclusive (low) "weak synthetic signal"; none -> consistent (low).
 - Video: frame-change spikes / flicker -> timestamp locations; never a contradiction. Audio (files and video soundtracks): digital-silence floor, hard bandwidth limit, spectral flatness; one indicator alone is not counted; never a contradiction.
 - Artifacts: spectrum, noise map, frame-change graph (+ JSON), audio spectrum. Badge: marker > AI SIGNALS: STRONG > EDITED > AI SIGNALS: WEAK > AI: NOT DETECTED (`app/engine/summary.py` `ai_check`). Calibration: `scripts/calibrate_synthetic.py`; thresholds `SYNTH_*` in `config.py`. Re-used on caption re-runs.
+
+- Splice localisation (same witness): block-wise noise-inconsistency map; the most inconsistent region is a `region` location "possible pasted-in region"; always inconclusive (medium only when its error level agrees, `SPLICE_*`).
+
+### 6.9 Spoken claims (Sampurna): `app/transcribe.py`
+- faster-whisper tiny, CPU int8, first 30 s of the first audio/video input (`scripts/download_models.py` -> `data/models/`, MIT). The rules extract claims from the transcript (duplicates of caption claims dropped). Missing model / no speech / errors -> `transcript.status` != ok with the reason, never a crash.
 
 ## 7. Rule engine (Sampurna): `app/engine/rules.py`
 
