@@ -5,8 +5,10 @@ Max reliability: high.
 Is this footage already in our archive of verified clips, and does its verified date/place fit the caption?
 
   1. load_archive():  config.ARCHIVE_JSON, built by scripts/build_archive.py (Sampurna).
-  2. Sample the upload with app/media.sample_frames at the ARCHIVE's sample_fps and default width, and hash
-     each frame with media.phash_hex, so upload and archive hashes come from identical code paths.
+  2. Sample the upload with app/media.sample_frames at media.sample_fps_for(its duration) (4 fps under
+     config.SHORT_CLIP_S, else the normal rate) and the default width, and hash each frame with media.phash_hex.
+     build_archive.py uses the same rule, so upload and archive hashes come from identical code paths. Each archive
+     clip records its own sample_fps (old archives: the top-level value).
   3. Frame match: media.hamming <= PRIOR_MAX_HAMMING (8). Clip match: >= PRIOR_MIN_MATCHED_FRAMES (3) frames or
      >= PRIOR_MIN_MATCHED_FRACTION (30%) of sampled frames match the SAME archive clip.
      Short inputs (photos, clips with < 3 sampled frames) let one frame decide, so that frame must be
@@ -39,7 +41,8 @@ from pathlib import Path
 from typing import Any, Optional
 
 from app import config
-from app.media import frame_at, hamming, load_image, media_kind, phash_hex, sample_frames
+from app.media import (frame_at, hamming, load_image, media_kind, phash_hex, sample_fps_for, sample_frames,
+                       video_info)
 from app.schemas import Claim, Finding
 from app.witnesses.base import InputRef, InvestigationContext, Witness, run_cli
 
@@ -68,8 +71,10 @@ def load_archive(path: Optional[Path] = None) -> dict:
 
 
 def nearest_frames(upload_hashes: list[str], clip_hashes: list[str]) -> list[tuple[int, int]]:
-    """For each upload frame: (smallest Hamming distance to this archive clip, index of that archive frame)."""
-    return [min((hamming(h, c), j) for j, c in enumerate(clip_hashes)) for h in upload_hashes]
+    """For each upload frame: (smallest Hamming distance to this archive clip, index of that archive frame).
+    Ties (static scenes hash alike) go to the archive frame at the same position, so Time Machine pairs line up."""
+    return [min((hamming(h, c), abs(j - i), j) for j, c in enumerate(clip_hashes))[::2]
+            for i, h in enumerate(upload_hashes)]
 
 
 def match_clip(upload_hashes: list[str], clip_hashes: list[str], max_hamming: int) -> list[Optional[int]]:
@@ -115,8 +120,8 @@ def best_matches(upload_hashes: list[str], clips: list[dict]) -> list[dict]:
 
 
 def spread_pairs(pairs: list[tuple[int, int, int]], k: int) -> list[tuple[int, int, int]]:
-    """Up to k matched pairs spread across the upload: split the time-ordered matches into k chunks and
-    take the lowest-Hamming pair of each chunk."""
+    """Up to k matched pairs spread across the upload: split the time-ordered matches into k chunks and take the
+    lowest-Hamming pair of each chunk (k = 3: start / middle / end). Fewer than k matches: all of them."""
     pairs = sorted(pairs)
     if len(pairs) <= k:
         return pairs
@@ -147,11 +152,15 @@ def _save_jpg(img, path: Path) -> None:
 
 
 def matched_spans(times: list[float], idx: list[int], step: float, duration: Optional[float]) -> list[tuple[float, float]]:
-    """Matched sample times -> merged [start, end] ranges; each sample covers one sampling step."""
+    """Matched sample times -> merged [start, end] ranges. Each sample covers the time up to the NEXT sample
+    (sampling gaps are uneven when the clip's frame rate isn't a multiple of the sampling rate); the last
+    sample covers one sampling step, clipped to the clip's duration."""
     spans: list[list[float]] = []
     for i in sorted(idx):
         s = times[i]
-        e = s + step if duration is None else min(s + step, duration)
+        e = times[i + 1] if i + 1 < len(times) else s + step
+        if duration is not None:
+            e = min(e, duration)
         if spans and s <= spans[-1][1] + 1e-6:
             spans[-1][1] = max(spans[-1][1], e)
         else:
@@ -290,7 +299,9 @@ class PriorAppearanceWitness(Witness):
 
     def _check(self, ctx: InvestigationContext, inp: InputRef, n: int, total: int, archive: dict,
                clips: list[dict]) -> Finding:
-        fps = float(archive.get("sample_fps") or config.PRIOR_SAMPLE_FPS)
+        normal_fps = float(archive.get("sample_fps") or config.PRIOR_SAMPLE_FPS)
+        duration = self._duration(inp)
+        fps = sample_fps_for(duration, normal_fps)              # same rule as build_archive.py (4 fps if short)
         frames = sample_frames(inp.path, fps, inp.mime)        # media.py defaults: same width as the archive
         times = [t for t, _ in frames]
         hashes = [phash_hex(img) for _, img in frames]
@@ -316,6 +327,7 @@ class PriorAppearanceWitness(Witness):
             "archive_size": len(clips),
             "sampled_frames": n_frames,
             "sample_fps": fps,
+            "upload_duration_s": duration,
             "hamming_threshold": thr,
             "match_rule": {"min_frames": config.PRIOR_MIN_MATCHED_FRAMES, "min_fraction": config.PRIOR_MIN_MATCHED_FRACTION},
         }
@@ -345,20 +357,21 @@ class PriorAppearanceWitness(Witness):
         # (e.g. two takes of the same scene). Which verified record applies is then unclear -> no conclusion.
         conflicting = [r for r in matching[1:] if not same_context(clip, r["clip"])]
         details.update({
-            "matched_clip": {k: clip.get(k) for k in ("clip_id", "title", "verified_date", "verified_location",
-                                                      "verified_lat", "verified_lon", "verified_by", "source_note")},
+            "matched_clip": {**{k: clip.get(k) for k in ("clip_id", "title", "verified_date", "verified_location",
+                                                         "verified_lat", "verified_lon", "verified_by", "source_note")},
+                             "sample_fps": float(clip.get("sample_fps") or normal_fps)},
             "matched_times_s": [times[i] for i in best["matched_idx"]],
             "other_matching_clips": others,
         })
         if not conflicting:   # an ambiguous match shows no single "verified" record (Live Desk Time Machine)
-            details.update(self._time_machine(ctx, inp, total, clip, best, frames, limitations))
+            details.update(self._time_machine(ctx, inp, total, clip, best, frames, limitations, normal_fps))
         date_cmp = compare_date(clip.get("verified_date", ""), ctx.claims_of("time"))
         loc_cmp = compare_location(clip, ctx.claims_of("location"))
         details["comparison"] = {"date": date_cmp, "location": loc_cmp}
 
         locations = [] if is_photo else [
             {"kind": "timestamp", "file_id": inp.file_id, "start_s": s, "end_s": e}
-            for s, e in matched_spans(times, best["matched_idx"], 1.0 / fps, inp.duration_s)]
+            for s, e in matched_spans(times, best["matched_idx"], 1.0 / fps, duration or inp.duration_s)]
         evidence = [{"kind": "archive_match", "ref": clip["clip_id"],
                      "label": f"{clip.get('title', clip['clip_id'])} (verified {clip.get('verified_location')}, "
                               f"{clip.get('verified_date')})"},
@@ -451,7 +464,7 @@ class PriorAppearanceWitness(Witness):
         )
 
     def _time_machine(self, ctx: InvestigationContext, inp: InputRef, total: int, clip: dict, best: dict,
-                      frames: list, limitations: list[str]) -> dict:
+                      frames: list, limitations: list[str], archive_fps: float) -> dict:
         """Live Desk "Time Machine" fields (§14): details.frame_matches[] with upload/archive frame JPGs saved in
         artifacts/frames/, plus verified_date / verified_location / verified_by. Never raises: on a missing
         archive clip archive_frame is null; on any other problem frame_matches is empty. Both add a limitation."""
@@ -467,7 +480,8 @@ class PriorAppearanceWitness(Witness):
             still = load_image(src) if src is not None and media_kind(src) == "image" else None
             failed = False
             for ui, ai, d in spread_pairs(best["pairs"], config.PRIOR_TIME_MACHINE_MAX_PAIRS):
-                archive_s = times[ai] if ai < len(times) else round(ai / float(clip.get("sample_fps") or 1.0), 3)
+                clip_fps = float(clip.get("sample_fps") or archive_fps)   # per clip; old archives: top-level
+                archive_s = times[ai] if ai < len(times) else round(ai / clip_fps, 3)
                 up_ref = f"frames/{prefix}up_{ui:03d}.jpg"
                 _save_jpg(frames[ui][1], ctx.artifact_path(up_ref))
                 ar_ref = None
@@ -489,6 +503,17 @@ class PriorAppearanceWitness(Witness):
             out["frame_matches"] = []
             limitations.append(f"Matched frames could not be saved for display ({type(exc).__name__})")
         return out
+
+    @staticmethod
+    def _duration(inp: InputRef) -> Optional[float]:
+        """Video duration as build_archive.py measures it (frame count / fps); None for images or if unknown."""
+        if inp.kind != "video":
+            return None
+        try:
+            vfps, count = video_info(inp.path)
+            return round(count / vfps, 3) if count and vfps else inp.duration_s
+        except Exception:  # noqa: BLE001 - unknown duration -> the normal sampling rate
+            return inp.duration_s
 
     def _no_archive(self, why: str, n: int) -> Finding:
         return self.finding(

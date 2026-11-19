@@ -99,6 +99,18 @@ def _iter_video(path: Path, every_s: float, max_width: Optional[int] = None) -> 
         cap.release()
 
 
+def sample_fps_for(duration_s: Optional[float], fps: Optional[float] = None) -> float:
+    """Sampling rate for a clip of this duration: config.SHORT_CLIP_FPS (4) under config.SHORT_CLIP_S (10 s),
+    else `fps` (default config.PRIOR_SAMPLE_FPS). Unknown duration (e.g. images) -> the normal rate.
+    The archive builder and the prior_appearance witness both use this, so they hash the same frames."""
+    from app import config  # noqa: PLC0415 - avoid a config import cycle at module load
+
+    normal = config.PRIOR_SAMPLE_FPS if fps is None else fps
+    if duration_s is not None and 0 < duration_s < config.SHORT_CLIP_S:
+        return max(float(config.SHORT_CLIP_FPS), float(normal))
+    return float(normal)
+
+
 def sample_frames(path: Path, fps: float = 1.0, mime: str | None = None,
                   max_width: Optional[int] = None) -> list[tuple[float, Image.Image]]:
     """[(t_seconds, RGB frame)]: images give one frame at t=0, videos one frame per 1/fps seconds.

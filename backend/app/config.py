@@ -140,11 +140,16 @@ WEATHER_FORECAST_CACHE_TTL_S = 3600  # refresh cached forecast data after ~1 h w
 
 # Archive builder (§6.4, scripts/build_archive.py, taken over from Adithi).
 # Hand-edited list of verified clips; the builder adds frame hashes and writes ARCHIVE_JSON.
-# Sampling must match the prior_appearance witness: both use app/media.py with PRIOR_SAMPLE_FPS.
+# Sampling must match the prior_appearance witness: both use app/media.py with sample_fps_for(duration).
 ARCHIVE_MANIFEST = DATA_DIR / "archive" / "manifest.json"
 # Sampled frames are shrunk to this width before hashing (pHash only looks at 32x32 anyway).
 # Changing it changes every hash: rebuild data/archive/archive.json afterwards.
 FRAME_SAMPLE_MAX_WIDTH = 640
+# Short clips are sampled more densely (media.sample_fps_for, used by BOTH build_archive.py and prior_appearance):
+# a 2.9 s clip gives 3 frames at 1 fps (one frame decides a match) but 12 at 4 fps. Approved by Sampurna.
+# Changing these changes which frames are hashed: rebuild data/archive/archive.json afterwards.
+SHORT_CLIP_S = 10.0                  # clips shorter than this ...
+SHORT_CLIP_FPS = 4.0                 # ... are sampled at 4 frames/s instead of PRIOR_SAMPLE_FPS
 
 # Runtime LLM (claim extraction + explanations only; never decides truth)
 LLM_PROVIDER = os.getenv("ALIBI_LLM_PROVIDER", "none").strip().lower()   # anthropic | gemini | none
@@ -289,7 +294,8 @@ PRIOR_HIGH_MAX_MEDIAN_HAMMING = 1.5  # consistent/contradiction (high) only if t
                                      # median 0-1.0; OTHER takes of the same scene that pass the frame rule median 2-8
                                      # (13 pairs at 2). 1.5 = widest margin; the gap is clean but only 1 bit wide.
 # Live Desk "Time Machine" (§14): matched upload/archive frame pairs saved as JPGs in artifacts/frames/.
-PRIOR_TIME_MACHINE_MAX_PAIRS = 5     # at most 5 pairs, spread across the upload (best match per time chunk)
+PRIOR_TIME_MACHINE_MAX_PAIRS = 3     # Sam's decision: 3 pairs = best match from the start / middle / end
+                                     # thirds of the matched frames (fewer matches: all of them)
 PRIOR_TIME_MACHINE_WIDTH = 640       # px, JPG width (display only; hashing is unaffected)
 PRIOR_TIME_MACHINE_JPEG_QUALITY = 80
 

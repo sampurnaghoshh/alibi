@@ -90,7 +90,8 @@ def test_match_and_agreeing_claims_is_consistent_high(tmp_path, archive, upload)
     archive()
     f = _run(tmp_path, upload, "Massive flooding in Chennai yesterday evening")
     assert (f.status, f.reliability) == ("consistent", "high")
-    assert f.details["matched_frames"] == 6 and f.details["matched_fraction"] == 1.0
+    assert f.details["sample_fps"] == 4.0                                # 6 s clip < SHORT_CLIP_S -> 4 fps
+    assert f.details["matched_frames"] == f.details["sampled_frames"] == 24 and f.details["matched_fraction"] == 1.0
     assert f.details["min_hamming"] <= f.details["median_hamming"] <= config.PRIOR_MAX_HAMMING
     assert f.details["archive_size"] == 1
     assert set(f.claim_ids) == {"c2", "c3"}                          # location + time
@@ -314,14 +315,24 @@ def test_time_machine_jpgs_exist_and_are_small(tmp_path, archive, upload):
             with Image.open(path) as im:
                 assert im.format == "JPEG" and im.width <= config.PRIOR_TIME_MACHINE_WIDTH
         assert p["hamming"] <= config.PRIOR_MAX_HAMMING
-        assert p["archive_s"] == p["upload_s"]          # same scenes at the same seconds in this fixture
+        assert int(p["archive_s"]) == int(p["upload_s"])   # same scene (one per second) on both sides
 
 
-def test_time_machine_caps_pairs_and_spreads_them():
-    pairs = [(i, i, d) for i, d in enumerate([5, 0, 3, 4, 1, 6, 2, 7, 3, 0])]
-    picked = P.spread_pairs(pairs, 5)
-    assert len(picked) == 5 and [p[0] for p in picked] == sorted(p[0] for p in picked)
-    assert picked[0] == (1, 1, 0) and picked[-1] == (9, 9, 0)   # best of each chunk, first and last chunk covered
+def test_time_machine_picks_best_pair_from_each_third():
+    assert config.PRIOR_TIME_MACHINE_MAX_PAIRS == 3
+    # 9 matched frames: thirds are upload frames 0-2, 3-5, 6-8
+    pairs = [(i, i, d) for i, d in enumerate([5, 0, 3,   4, 6, 1,   2, 7, 3])]
+    assert P.spread_pairs(pairs, 3) == [(1, 1, 0), (5, 5, 1), (6, 6, 2)]   # best of start / middle / end
+    assert P.spread_pairs(pairs[:2], 3) == pairs[:2]                       # fewer than 3 matches: all of them
+
+
+def test_time_machine_three_pairs_from_three_thirds(tmp_path, archive, upload):
+    archive(verified_date="2024-07-25")
+    f = _run(tmp_path, upload, "Massive flooding in Chennai yesterday evening")
+    pairs = f.details["frame_matches"]
+    duration = f.details["upload_duration_s"]
+    thirds = [min(int(3 * p["upload_s"] / duration), 2) for p in pairs]
+    assert len(pairs) == 3 and thirds == [0, 1, 2]                          # one pair in each third, in order
 
 
 def test_missing_archive_clip_gives_null_archive_frame_and_a_limitation(tmp_path, archive, upload):
@@ -367,3 +378,83 @@ def test_ambiguous_match_has_no_time_machine(tmp_path, make_video, monkeypatch, 
     _build_two(tmp_path, make_video, monkeypatch, {"verified_date": "2024-07-25", **PUNE})
     f = _run(tmp_path, upload, "Massive flooding in Chennai yesterday evening")
     assert f.status == "inconclusive" and "frame_matches" not in f.details and "verified_date" not in f.details
+
+
+# --- short clips at 4 fps (one rule shared by build_archive.py and the witness) -------------
+
+def test_sample_fps_for_rule(monkeypatch):
+    from app.media import sample_fps_for
+    monkeypatch.setattr(config, "SHORT_CLIP_S", 10.0)
+    monkeypatch.setattr(config, "SHORT_CLIP_FPS", 4.0)
+    assert [sample_fps_for(d) for d in (2.87, 9.99, 10.0, 25.0, None)] == [4.0, 4.0, 1.0, 1.0, 1.0]
+    assert sample_fps_for(3.0, 0.5) == 4.0 and sample_fps_for(30.0, 0.5) == 0.5
+
+
+def _two_length_archive(tmp_path, make_video):
+    """Real build_archive.py on a short (3 s) and a long (12 s) synthetic clip."""
+    d = tmp_path / "arch"
+    d.mkdir()
+    _video(make_video, d / "short.mp4", [20, 21, 22])
+    _video(make_video, d / "long.mp4", list(range(30, 42)))
+    base = {"verified_date": "2026-11-18", "verified_by": "Team member", "source_note": "Own recording", **CHENNAI}
+    (d / "manifest.json").write_text(json.dumps([
+        {"clip_id": "short", "file": "short.mp4", "title": "Short", **base},
+        {"clip_id": "long", "file": "long.mp4", "title": "Long", **base}]), encoding="utf-8")
+    out = d / "archive.json"
+    assert build_archive.main(["--manifest", str(d / "manifest.json"), "--out", str(out)]) == 0
+    return d, out
+
+
+def test_builder_and_witness_hash_identical_frames_at_per_clip_fps(tmp_path, make_video, monkeypatch):
+    from app.media import phash_hex, sample_fps_for, sample_frames
+    d, out = _two_length_archive(tmp_path, make_video)
+    data = json.loads(out.read_text(encoding="utf-8"))
+    clips = {c["clip_id"]: c for c in data["clips"]}
+    assert data["sample_fps"] == config.PRIOR_SAMPLE_FPS == 1.0              # top level kept for old readers
+    assert clips["short"]["sample_fps"] == 4.0 and len(clips["short"]["frame_hashes"]) == 12
+    assert clips["long"]["sample_fps"] == 1.0 and len(clips["long"]["frame_hashes"]) == 12
+    monkeypatch.setattr(config, "ARCHIVE_JSON", out)
+    for cid in ("short", "long"):
+        up = tmp_path / f"upload_{cid}.mp4"
+        up.write_bytes((d / f"{cid}.mp4").read_bytes())                     # the same clip, uploaded
+        frames = sample_frames(up, sample_fps_for(clips[cid]["duration_s"]))
+        assert [phash_hex(i) for _, i in frames] == clips[cid]["frame_hashes"]   # identical hashes ...
+        assert [t for t, _ in frames] == clips[cid]["frame_times_s"]             # ... at identical times
+        f = _run(tmp_path, up, "Flooding in Chennai yesterday")
+        assert f.details["sample_fps"] == clips[cid]["sample_fps"]
+        assert f.details["matched_clip"]["clip_id"] == cid and f.details["matched_clip"]["sample_fps"] == clips[cid]["sample_fps"]
+        assert f.details["median_hamming"] == 0 and f.details["matched_frames"] == len(frames)
+        assert (f.status, f.reliability) == ("consistent", "high")
+        for p in f.details["frame_matches"]:
+            assert p["archive_s"] in clips[cid]["frame_times_s"] and p["upload_s"] == p["archive_s"]
+
+
+def test_old_archive_without_per_clip_fps_still_works(tmp_path, make_video, monkeypatch):
+    d = tmp_path / "old"
+    d.mkdir()
+    _video(make_video, d / "flood.mp4", ARCHIVE_SEEDS)                      # 6 s: short under the new rule
+    (d / "manifest.json").write_text(json.dumps([{
+        "clip_id": "clip_old", "file": "flood.mp4", "title": "Old entry", "verified_date": "2024-07-25",
+        "verified_by": "Team member", "source_note": "Built before per-clip fps", **CHENNAI}]), encoding="utf-8")
+    out = d / "archive.json"
+    monkeypatch.setattr(config, "SHORT_CLIP_S", 0)                          # build it the old way: 1 fps for all
+    assert build_archive.main(["--manifest", str(d / "manifest.json"), "--out", str(out)]) == 0
+    data = json.loads(out.read_text(encoding="utf-8"))
+    for c in data["clips"]:                                                 # old format: no per-clip fps / times
+        c.pop("sample_fps"), c.pop("frame_times_s")
+    out.write_text(json.dumps(data), encoding="utf-8")
+    monkeypatch.setattr(config, "SHORT_CLIP_S", 10.0)                       # the witness uses the new rule
+    monkeypatch.setattr(config, "ARCHIVE_JSON", out)
+    up = tmp_path / "reshared.mp4"
+    up.write_bytes((d / "flood.mp4").read_bytes())
+    f = _run(tmp_path, up, "Massive flooding in Chennai yesterday evening")
+    assert (f.status, f.reliability) == ("contradiction", "high")          # 4 fps upload vs 1 fps archive still matches
+    assert f.details["sample_fps"] == 4.0 and f.details["matched_clip"]["sample_fps"] == 1.0
+    assert f.details["median_hamming"] == 0
+    assert all(p["archive_s"] == float(int(p["archive_s"])) for p in f.details["frame_matches"])   # index / 1 fps
+
+
+def test_spans_cover_uneven_sample_gaps():
+    # 4 fps sampling of a 5 fps video lands at 0, 0.4, 0.6, 0.8, 1.0 ... : one continuous match, not fragments
+    times = [0.0, 0.4, 0.6, 0.8, 1.0, 1.4]
+    assert P.matched_spans(times, [0, 1, 2, 3, 4, 5], 0.25, 1.6) == [(0.0, 1.6)]
