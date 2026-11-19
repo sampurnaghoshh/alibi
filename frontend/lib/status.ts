@@ -1,10 +1,10 @@
 export const statusStyles: Record<string, string> = {
-  contradiction: "border-red-500/30 bg-red-500/10 text-red-400",
-  consistent: "border-emerald-500/30 bg-emerald-500/10 text-emerald-400",
-  inconclusive: "border-zinc-500/30 bg-zinc-500/10 text-zinc-400",
+  contradiction: "border-[#D96B68]/30 bg-[#D96B68]/10 text-[#D96B68]",
+  consistent: "border-[#69B88A]/30 bg-[#69B88A]/10 text-[#69B88A]",
+  inconclusive: "border-[#929CAA]/30 bg-[#929CAA]/10 text-[#929CAA]",
   insufficient_signal:
-    "border-dashed border-zinc-500/40 bg-zinc-500/10 text-zinc-400",
-  not_applicable: "border-zinc-700 bg-zinc-800/50 text-zinc-500",
+    "border-dashed border-[#929CAA]/40 bg-[#929CAA]/10 text-[#929CAA]",
+  not_applicable: "border-[#929CAA]/20 bg-[#929CAA]/5 text-[#929CAA]/60",
 };
 
 export const statusLabels: Record<string, string> = {

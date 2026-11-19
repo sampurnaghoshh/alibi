@@ -57,7 +57,7 @@ if (lastEnd < caption.length) {
 
 
   return (
-    <main className="min-h-screen bg-[#090b10] text-zinc-100">
+    <main className="min-h-screen bg-[#0D1012] text-zinc-100">
       <header className="border-b border-white/10 bg-[#0d1017]">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-5">
           <div>
@@ -77,9 +77,11 @@ if (lastEnd < caption.length) {
       <div className="mx-auto max-w-7xl space-y-8 px-6 py-8">
         <section>
           <p className="mb-3 text-xs font-semibold tracking-[0.2em] text-red-400">
-            PRIORITY HUMAN REVIEW
+           {assessment.human_review === "priority"
+  ? "PRIORITY HUMAN REVIEW"
+  : "STANDARD HUMAN REVIEW"}
           </p>
-          <div className="rounded-xl border border-red-500/20 bg-[#131720] p-6">
+          <div className="rounded-xl border border-red-500/20 bg-[#15191D] p-6">
             <p className="text-xs tracking-widest text-zinc-500">
               INVESTIGATION ASSESSMENT
             </p>

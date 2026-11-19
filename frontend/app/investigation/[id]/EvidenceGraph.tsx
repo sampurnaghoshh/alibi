@@ -15,10 +15,10 @@ import "@xyflow/react/dist/style.css";
 import investigation from "../../../../shared/fixtures/sample_investigation.json";
 
 const statusColors: Record<string, string> = {
-  contradiction: "#dc6666",
-  consistent: "#65a98a",
-  inconclusive: "#9299a5",
-  insufficient_signal: "#9299a5",
+  contradiction: "#D96B68",
+  consistent: "#69B88A",
+  inconclusive: "#929CAA",
+  insufficient_signal: "#929CAA",
   not_applicable: "#626975",
 };
 
