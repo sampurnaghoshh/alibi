@@ -17,10 +17,11 @@ archive: casea_original (HDR original) + casea_circulating (first WhatsApp copy,
 note: Confirm with the weather witness that Chennai was dry on the claimed evening before relying on this date.
 
 ## case_b
-caption: TODO
-posted_at: TODO
-files: demo/case_b/
-expect: lipsync contradiction (medium) with flagged timestamps; metadata editing/encoder hints
+caption: Nooman announcing ALIBI's launch at the hackathon today
+posted_at: 2026-11-19
+files: demo/case_b/caseb_final/caseb_swapped.mp4
+expect: lipsync inconclusive (low), never a contradiction; ENF insufficient signal
+note: Voice replaced (Nooman's own video with another of his own recordings as audio, with consent; see demo/case_b/caseb_final/README.txt). Lip-sync cannot tell it from the genuine clip, so it stays inconclusive by design: this is the honesty beat, not a catch.
 
 ## control_1
 caption: Sampurna explaining our project at the hackathon in Bengaluru today

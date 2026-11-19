@@ -12,7 +12,9 @@
  *   Esc or a click on empty space clears it. D opens the case details drawer (SHA-256, custody log).
  * - /api/health tells which witnesses exist in this build; the others are shown as "Not available in
  *   this build", never as an investigation result.
- * - /live?id=inv_... reopens a case. I toggles the idle screen.
+ * - /live?id=inv_... reopens a case. I toggles the idle screen, Esc returns to it.
+ * - Keyboard-only demo triggers for the pitch: 1 runs Case A, 2 runs Case B (POST /api/demo/...);
+ *   ? shows the shortcut help. Nothing on screen advertises them.
  */
 (function () {
   "use strict";
@@ -1057,14 +1059,49 @@
   $("case").addEventListener("click", function (e) {
     if (!e.target.closest(".tile, .detail, mark, .tag, .graph, button, .drawer")) clearSelection();
   });
+  // ------------------------------------------------------------------ demo triggers (keyboard only)
+  // 1 / 2 start Case A / Case B on the server. Nothing appears on screen: the case opens through the
+  // live feed like any other. The outcome of the last trigger is only shown in the "?" help overlay.
+  var DEMO_KEYS = { "1": "case_a", "2": "case_b" };
+  var triggering = null;
+
+  function helpStatus(text) { $("help-status").textContent = text; }
+
+  function triggerDemo(name) {
+    if (triggering) { helpStatus(triggering + " is still running; " + name + " was not started."); return; }
+    triggering = name;
+    helpStatus("Started " + name + ".");
+    fetch("/api/demo/" + encodeURIComponent(name), { method: "POST" }).then(function (r) {
+      if (r.ok) { helpStatus(name + " finished."); return; }
+      return r.json().catch(function () { return {}; }).then(function (body) {
+        helpStatus(name + " did not run: " + (body.detail || ("HTTP " + r.status)));
+      });
+    }).catch(function () {
+      helpStatus(name + " did not run: the server could not be reached.");
+    }).then(function () { triggering = null; });
+  }
+
+  function toggleHelp(on) {
+    if (on === undefined) on = $("help").hidden;
+    $("help").hidden = !on;
+  }
+
   document.addEventListener("keydown", function (e) {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.key === "?") { toggleHelp(); return; }
     if (e.key === "Escape") {
+      if (!$("help").hidden) { toggleHelp(false); return; }
       if (!$("drawer").hidden) { toggleDrawer(false); return; }
       if (current && current.sel) { clearSelection(); return; }
+      showIdle(true);                                  // Esc always returns to the idle screen
+      return;
     }
+    if (DEMO_KEYS[e.key]) { triggerDemo(DEMO_KEYS[e.key]); return; }
     if ((e.key === "d" || e.key === "D") && current && $("idle").hidden) { toggleDrawer(); return; }
-    if (e.key === "i" || e.key === "I" || e.key === "Escape") showIdle($("idle").hidden);
+    if (e.key === "i" || e.key === "I") showIdle($("idle").hidden);
   });
+  $("help-close").innerHTML = icon("x");
+  $("help-close").addEventListener("click", function () { toggleHelp(false); });
   window.addEventListener("resize", function () { refit(); fitTiles(); });
 
   loadIdle();

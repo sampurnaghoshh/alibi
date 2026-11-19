@@ -109,6 +109,19 @@ def test_seen_before_panel_only_for_high_reliability_matches():
     assert 'x.reliability === "high"' in body and "frame_matches" in body
 
 
+def test_demo_keyboard_triggers_and_help():
+    js = (STATIC / "live.js").read_text(encoding="utf-8")
+    assert 'DEMO_KEYS = { "1": "case_a", "2": "case_b" }' in js
+    assert '"/api/demo/" + encodeURIComponent(name), { method: "POST" }' in js
+    assert 'e.key === "?"' in js and "showIdle(true)" in js
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    help_box = html[html.index('id="help"'):html.index("</aside>", html.index('id="help"'))]
+    for key, text in (("1", "Run Case A"), ("2", "Run Case B"), ("Esc", "idle screen"), ("?", "this help")):
+        assert f"<kbd>{key}</kbd>" in help_box and text in help_box
+    # nothing visible advertises the shortcuts: the help starts hidden
+    assert '<aside id="help" class="help" hidden>' in html
+
+
 def test_detail_panel_sections_and_drawer():
     js = (STATIC / "live.js").read_text(encoding="utf-8")
     for heading in ("What was checked", "Data retrieved", "What was found", "Why it contradicts the claim",

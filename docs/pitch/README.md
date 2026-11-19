@@ -10,6 +10,8 @@ recordings (staged by the team).
 | `enf_img5384_100hz.png` | Hour-1 ENF spectrogram of IMG_5384, the clip closest to a mains-hum detection. |
 | `enf_img5388_spurious_60hz.png` | Hour-1 ENF spectrogram of IMG_5388, with a spurious 60 Hz trace. |
 | `enf_go_no_go.json` | Per-clip SNR table (50 / 60 / 100 / 120 Hz) for the 5 hour-1 clips and the NO-GO result. |
+| `caseb_swapped_lipsync_chart.png` | Case B (voice replaced, `demo/case_b/caseb_final/caseb_swapped.mp4`): frame + landmarks, mouth vs loudness, correlation vs lag. Reported inconclusive / low (corr 0.19, lag -0.30 s). |
+| `genuine_IMG_5414_lipsync_chart.png` | The same video with its own audio, for comparison: also inconclusive / low, and LESS in sync (corr 0.10). Why lip-sync never accuses. |
 
 ## Lip-sync
 

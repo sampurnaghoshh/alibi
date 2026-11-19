@@ -1,0 +1,77 @@
+{
+  "id": "f_lipsync_1",
+  "witness": "lipsync",
+  "family": "signal",
+  "claim_ids": [],
+  "status": "inconclusive",
+  "reliability": "low",
+  "title": "Lip-sync synchrony indicator: weak or unclear",
+  "summary": "Mouth movement and speech loudness show only a weak or unclear relationship (best lag -0.30 s, correlation 0.10, peak prominence 0.11). The indicator is not yet calibrated: its thresholds did not separate genuine from swapped-audio clips, so every result is reported as inconclusive. Lowest-agreement segments are marked for human review.",
+  "details": {
+    "file": "IMG_5414.MOV",
+    "rule_status": "contradiction",
+    "rule_reason": "no clear audio-mouth correlation peak near zero lag",
+    "mouth_feature": "velocity",
+    "lag_s": -0.3,
+    "lag_sign": "positive = audio after mouth",
+    "corr": 0.103,
+    "prominence": 0.109,
+    "corr_at_zero_lag": -0.016,
+    "face_fraction": 1.0,
+    "speech_window_fraction": 1.0,
+    "speech_windows": 6,
+    "analysis_fps": 30.0,
+    "rotation_deg": 0,
+    "clip_duration_s": 8.17,
+    "analysed_s": 8.17,
+    "lag_search_s": 0.3,
+    "contradiction_allowed": false,
+    "thresholds": {
+      "consistent": {
+        "max_abs_lag_s": 0.12,
+        "min_corr": 0.3,
+        "min_prominence": 0.0
+      },
+      "contradiction": {
+        "min_abs_lag_s": 0.25,
+        "max_corr": 0.1,
+        "max_prominence": -1.0
+      }
+    },
+    "face_height": 0.417,
+    "min_face_height": 0.25
+  },
+  "evidence": [
+    {
+      "kind": "artifact",
+      "ref": "artifacts/lipsync_series.json",
+      "label": "Mouth movement vs speech loudness series"
+    },
+    {
+      "kind": "input",
+      "ref": "in_1",
+      "label": "IMG_5414.MOV"
+    }
+  ],
+  "locations": [
+    {
+      "kind": "timestamp",
+      "file_id": "in_1",
+      "start_s": 1.0,
+      "end_s": 6.0
+    }
+  ],
+  "alternatives": [
+    "Dubbing or translation can replace the original audio track",
+    "Bluetooth or other playback/recording audio delay can shift sound against the picture",
+    "A low or variable frame rate blurs the timing of mouth movement",
+    "A small face in frame gives a noisy mouth measurement",
+    "The person speaking may be off-screen, or another voice may be louder than the visible speaker"
+  ],
+  "limitations": [
+    "Calibrated on only 5 genuine clips and 5 audio-swapped controls; the two groups did not separate cleanly",
+    "Mouth movement and speech loudness are only loosely related; this is a synchrony indicator, not a verdict",
+    "Lip-sync is reported as inconclusive until recalibration (LIPSYNC_ALLOW_CONTRADICTION is off)"
+  ],
+  "elapsed_ms": 6188
+}

@@ -100,6 +100,24 @@
     <footer class="banner">Human review required. This is an evidence report, not a verdict.</footer>
   </main>
 
+  <!-- Keyboard help: ? toggles it. Nothing else on the page advertises the shortcuts. -->
+  <aside id="help" class="help" hidden>
+    <div class="detail-head">
+      <span class="detail-name">Keyboard shortcuts</span>
+      <button id="help-close" class="icon-btn" type="button" aria-label="Close"></button>
+    </div>
+    <dl class="help-keys">
+      <dt><kbd>1</kbd></dt><dd>Run Case A</dd>
+      <dt><kbd>2</kbd></dt><dd>Run Case B</dd>
+      <dt><kbd>Esc</kbd></dt><dd>Close a panel, then return to the idle screen</dd>
+      <dt><kbd>I</kbd></dt><dd>Toggle the idle screen</dd>
+      <dt><kbd>D</kbd></dt><dd>Case details (SHA-256, custody log)</dd>
+      <dt><kbd>?</kbd></dt><dd>Show or hide this help</dd>
+    </dl>
+    <p class="help-note">Cases open on screen through the live feed, the same way a Telegram case does.</p>
+    <p id="help-status" class="help-status mono"></p>
+  </aside>
+
   <!-- Case details drawer: original files (SHA-256), chain-of-custody log. D toggles it. -->
   <aside id="drawer" class="drawer" hidden>
     <div class="detail-head">
