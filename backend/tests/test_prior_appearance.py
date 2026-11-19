@@ -55,7 +55,7 @@ def archive(tmp_path, make_video, monkeypatch):
         entry = {k: v for k, v in entry.items() if v is not None}
         manifest = clip_dir / "manifest.json"
         manifest.write_text(json.dumps([entry]), encoding="utf-8")
-        out = tmp_path / "archive.json"
+        out = clip_dir / "archive.json"            # next to the manifest, as in data/archive/
         assert build_archive.main(["--manifest", str(manifest), "--out", str(out)]) == 0
         monkeypatch.setattr(config, "ARCHIVE_JSON", out)
         return out
@@ -224,7 +224,7 @@ def _build_two(tmp_path, make_video, monkeypatch, second: dict, second_seeds=ARC
     entries = [{"clip_id": "clip_001", "file": "a.mp4", "verified_date": "2026-11-18", **CHENNAI, **base},
                {"clip_id": "clip_002", "file": "b.mp4", **base, **second}]
     (d / "manifest.json").write_text(json.dumps(entries), encoding="utf-8")
-    out = tmp_path / "archive2.json"
+    out = d / "archive.json"
     assert build_archive.main(["--manifest", str(d / "manifest.json"), "--out", str(out)]) == 0
     monkeypatch.setattr(config, "ARCHIVE_JSON", out)
 
@@ -276,3 +276,94 @@ def test_refilmed_scene_passes_frame_threshold_but_not_the_gate(tmp_path, archiv
     assert f.details["matched_frames"] >= config.PRIOR_MIN_MATCHED_FRAMES     # it IS a frame-level match ...
     assert f.details["guards"]["rule_status"] == "contradiction"              # ... the rule alone would accuse ...
     assert (f.status, f.reliability) == ("inconclusive", "medium")           # ... but the gate stops it
+
+
+# --- Live Desk "Time Machine" fields (§14) ----------------------------------------------
+
+FIXTURE = Path(__file__).resolve().parents[2] / "shared" / "fixtures" / "sample_investigation.json"
+
+
+def _fixture_prior_details() -> dict:
+    data = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    return next(f["details"] for f in data["findings"] if f["witness"] == "prior_appearance")
+
+
+def test_time_machine_field_names_match_the_fixture(tmp_path, archive, upload):
+    archive(verified_date="2024-07-25")
+    f = _run(tmp_path, upload, "Massive flooding in Chennai yesterday evening")
+    fx = _fixture_prior_details()
+    for key in ("verified_date", "verified_location", "verified_by", "matched_clip_id", "matched_clip_title",
+                "frame_matches"):
+        assert key in fx and key in f.details, key
+    assert set(f.details["frame_matches"][0]) == set(fx["frame_matches"][0])   # upload_s, archive_s, hamming, ..._frame
+    assert (f.details["verified_date"], f.details["verified_location"]) == ("2024-07-25", "Chennai, Tamil Nadu")
+    assert f.details["verified_by"] == "Team member (demo archive)"
+
+
+def test_time_machine_jpgs_exist_and_are_small(tmp_path, archive, upload):
+    archive(verified_date="2024-07-25")
+    f = _run(tmp_path, upload, "Massive flooding in Chennai yesterday evening")
+    pairs = f.details["frame_matches"]
+    assert 1 <= len(pairs) <= config.PRIOR_TIME_MACHINE_MAX_PAIRS
+    assert [p["upload_s"] for p in pairs] == sorted(p["upload_s"] for p in pairs)   # spread in time order
+    for p in pairs:
+        for ref in (p["upload_frame"], p["archive_frame"]):
+            assert ref.startswith("artifacts/frames/") and ref.endswith(".jpg")
+            path = tmp_path / ref
+            assert path.is_file() and 0 < path.stat().st_size < 300_000
+            with Image.open(path) as im:
+                assert im.format == "JPEG" and im.width <= config.PRIOR_TIME_MACHINE_WIDTH
+        assert p["hamming"] <= config.PRIOR_MAX_HAMMING
+        assert p["archive_s"] == p["upload_s"]          # same scenes at the same seconds in this fixture
+
+
+def test_time_machine_caps_pairs_and_spreads_them():
+    pairs = [(i, i, d) for i, d in enumerate([5, 0, 3, 4, 1, 6, 2, 7, 3, 0])]
+    picked = P.spread_pairs(pairs, 5)
+    assert len(picked) == 5 and [p[0] for p in picked] == sorted(p[0] for p in picked)
+    assert picked[0] == (1, 1, 0) and picked[-1] == (9, 9, 0)   # best of each chunk, first and last chunk covered
+
+
+def test_missing_archive_clip_gives_null_archive_frame_and_a_limitation(tmp_path, archive, upload):
+    archive(verified_date="2024-07-25")
+    (tmp_path / "archive" / "flood.mp4").unlink()                # archive.json still lists it
+    f = _run(tmp_path, upload, "Massive flooding in Chennai yesterday evening")
+    assert (f.status, f.reliability) == ("contradiction", "high")   # the verdict does not depend on display frames
+    pairs = f.details["frame_matches"]
+    assert pairs and all(p["archive_frame"] is None for p in pairs)
+    assert all((tmp_path / p["upload_frame"]).is_file() for p in pairs)
+    assert any("archived source file for clip_001 was not found" in x for x in f.limitations)
+
+
+def test_time_machine_failure_never_breaks_the_finding(tmp_path, archive, upload, monkeypatch):
+    archive(verified_date="2024-07-25")
+    def boom(*a, **k):
+        raise OSError("disk full")
+    monkeypatch.setattr(P, "_save_jpg", boom)
+    f = _run(tmp_path, upload, "Massive flooding in Chennai yesterday evening")
+    assert (f.status, f.reliability) == ("contradiction", "high")
+    assert f.details["frame_matches"] == [] and f.details["verified_date"] == "2024-07-25"
+    assert any("could not be saved for display" in x for x in f.limitations)
+
+
+def test_photo_archive_entry_frame_is_saved(tmp_path, monkeypatch):
+    d = tmp_path / "archive_p"
+    d.mkdir()
+    Image.fromarray(_scene(12, 1280, 720)).save(d / "still.png")
+    (d / "manifest.json").write_text(json.dumps([{
+        "clip_id": "photo_001", "file": "still.png", "title": "Flooded road", "verified_date": "2024-07-25",
+        "verified_by": "Team member", "source_note": "Own photo", **CHENNAI}]), encoding="utf-8")
+    out = d / "archive.json"
+    assert build_archive.main(["--manifest", str(d / "manifest.json"), "--out", str(out)]) == 0
+    monkeypatch.setattr(config, "ARCHIVE_JSON", out)
+    up = tmp_path / "up.jpg"
+    Image.fromarray(_scene(12, 1280, 720)).save(up, quality=85)
+    f = _run(tmp_path, up, "Flooding in Chennai yesterday", mime="image/jpeg")
+    (p,) = f.details["frame_matches"]
+    assert p["archive_frame"] and (tmp_path / p["archive_frame"]).is_file()
+
+
+def test_ambiguous_match_has_no_time_machine(tmp_path, make_video, monkeypatch, upload):
+    _build_two(tmp_path, make_video, monkeypatch, {"verified_date": "2024-07-25", **PUNE})
+    f = _run(tmp_path, upload, "Massive flooding in Chennai yesterday evening")
+    assert f.status == "inconclusive" and "frame_matches" not in f.details and "verified_date" not in f.details

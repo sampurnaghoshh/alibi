@@ -39,7 +39,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from app import config
-from app.media import hamming, phash_hex, sample_frames
+from app.media import frame_at, hamming, load_image, media_kind, phash_hex, sample_frames
 from app.schemas import Claim, Finding
 from app.witnesses.base import InputRef, InvestigationContext, Witness, run_cli
 
@@ -67,13 +67,14 @@ def load_archive(path: Optional[Path] = None) -> dict:
     return data
 
 
+def nearest_frames(upload_hashes: list[str], clip_hashes: list[str]) -> list[tuple[int, int]]:
+    """For each upload frame: (smallest Hamming distance to this archive clip, index of that archive frame)."""
+    return [min((hamming(h, c), j) for j, c in enumerate(clip_hashes)) for h in upload_hashes]
+
+
 def match_clip(upload_hashes: list[str], clip_hashes: list[str], max_hamming: int) -> list[Optional[int]]:
     """For each upload frame: its smallest Hamming distance to any frame of this archive clip, if <= max_hamming."""
-    out = []
-    for h in upload_hashes:
-        d = min((hamming(h, c) for c in clip_hashes), default=None)
-        out.append(d if d is not None and d <= max_hamming else None)
-    return out
+    return [d if d <= max_hamming else None for d, _ in nearest_frames(upload_hashes, clip_hashes)]
 
 
 def clip_matches(n_matched: int, n_frames: int) -> bool:
@@ -96,12 +97,14 @@ def best_matches(upload_hashes: list[str], clips: list[dict]) -> list[dict]:
         hashes = clip.get("frame_hashes") or []
         if not hashes:
             continue
-        per_frame = match_clip(upload_hashes, hashes, thr)
-        dists = [d for d in per_frame if d is not None]
-        closest = min(hamming(h, c) for h in upload_hashes for c in hashes) if upload_hashes else None
+        nearest = nearest_frames(upload_hashes, hashes)
+        pairs = [(i, j, d) for i, (d, j) in enumerate(nearest) if d <= thr]   # (upload idx, archive idx, hamming)
+        dists = [d for _, _, d in pairs]
+        closest = min(d for d, _ in nearest) if nearest else None
         rows.append({
             "clip": clip,
-            "matched_idx": [i for i, d in enumerate(per_frame) if d is not None],
+            "matched_idx": [i for i, _, _ in pairs],
+            "pairs": pairs,
             "dists": dists,
             "closest": closest,
             "is_match": clip_matches(len(dists), len(upload_hashes)),
@@ -109,6 +112,38 @@ def best_matches(upload_hashes: list[str], clips: list[dict]) -> list[dict]:
     rows.sort(key=lambda r: (-len(r["dists"]), statistics.median(r["dists"]) if r["dists"] else 99,
                              r["closest"] if r["closest"] is not None else 99))
     return rows
+
+
+def spread_pairs(pairs: list[tuple[int, int, int]], k: int) -> list[tuple[int, int, int]]:
+    """Up to k matched pairs spread across the upload: split the time-ordered matches into k chunks and
+    take the lowest-Hamming pair of each chunk."""
+    pairs = sorted(pairs)
+    if len(pairs) <= k:
+        return pairs
+    size = len(pairs) / k
+    chunks = [pairs[round(i * size): round((i + 1) * size)] for i in range(k)]
+    return [min(c, key=lambda p: (p[2], p[0])) for c in chunks if c]
+
+
+def archive_source(clip: dict) -> Optional[Path]:
+    """The archived clip's file: manifest paths are relative to the manifest's folder (data/archive/).
+    Looked up next to archive.json first, then next to the manifest. None if not found."""
+    rel = clip.get("file")
+    if not rel:
+        return None
+    for base in (Path(config.ARCHIVE_JSON).parent, Path(config.ARCHIVE_MANIFEST).parent):
+        path = Path(rel) if Path(rel).is_absolute() else base / rel
+        if path.is_file():
+            return path
+    return None
+
+
+def _save_jpg(img, path: Path) -> None:
+    """Small JPG for the Live Desk: <= PRIOR_TIME_MACHINE_WIDTH px wide, quality PRIOR_TIME_MACHINE_JPEG_QUALITY."""
+    w = config.PRIOR_TIME_MACHINE_WIDTH
+    if img.width > w:
+        img = img.resize((w, max(1, round(img.height * w / img.width))))
+    img.convert("RGB").save(path, "JPEG", quality=config.PRIOR_TIME_MACHINE_JPEG_QUALITY)
 
 
 def matched_spans(times: list[float], idx: list[int], step: float, duration: Optional[float]) -> list[tuple[float, float]]:
@@ -306,12 +341,17 @@ class PriorAppearanceWitness(Witness):
         clip = best["clip"]
         matching = [r for r in rows if r["is_match"]]
         others = [match_row(r) for r in matching[1:]]
+        # Guard 1, ambiguity: the upload also matches another archive clip with a different verified date or place
+        # (e.g. two takes of the same scene). Which verified record applies is then unclear -> no conclusion.
+        conflicting = [r for r in matching[1:] if not same_context(clip, r["clip"])]
         details.update({
             "matched_clip": {k: clip.get(k) for k in ("clip_id", "title", "verified_date", "verified_location",
                                                       "verified_lat", "verified_lon", "verified_by", "source_note")},
             "matched_times_s": [times[i] for i in best["matched_idx"]],
             "other_matching_clips": others,
         })
+        if not conflicting:   # an ambiguous match shows no single "verified" record (Live Desk Time Machine)
+            details.update(self._time_machine(ctx, inp, total, clip, best, frames, limitations))
         date_cmp = compare_date(clip.get("verified_date", ""), ctx.claims_of("time"))
         loc_cmp = compare_location(clip, ctx.claims_of("location"))
         details["comparison"] = {"date": date_cmp, "location": loc_cmp}
@@ -329,9 +369,6 @@ class PriorAppearanceWitness(Witness):
         compared = [c for c in (date_cmp, loc_cmp) if c["result"] != "not_compared"]
         claim_ids = sorted({c["claim_id"] for c in compared if c.get("claim_id")})
 
-        # Guard 1, ambiguity: the upload also matches another archive clip with a different verified date or place
-        # (e.g. two takes of the same scene). Which verified record applies is then unclear -> no conclusion.
-        conflicting = [r for r in matching[1:] if not same_context(clip, r["clip"])]
         # Guard 2, near-duplicate gate: a high-reliability conclusion needs a near-identical copy. Re-filmed takes of
         # the same scene also pass the frame threshold, but at a larger median distance.
         median_h = statistics.median(best["dists"])
@@ -412,6 +449,46 @@ class PriorAppearanceWitness(Witness):
             alternatives=ALTERNATIVES,
             limitations=limitations,
         )
+
+    def _time_machine(self, ctx: InvestigationContext, inp: InputRef, total: int, clip: dict, best: dict,
+                      frames: list, limitations: list[str]) -> dict:
+        """Live Desk "Time Machine" fields (§14): details.frame_matches[] with upload/archive frame JPGs saved in
+        artifacts/frames/, plus verified_date / verified_location / verified_by. Never raises: on a missing
+        archive clip archive_frame is null; on any other problem frame_matches is empty. Both add a limitation."""
+        out: dict[str, Any] = {k: clip.get(k) for k in ("verified_date", "verified_location", "verified_by")}
+        out.update(matched_clip_id=clip["clip_id"], matched_clip_title=clip.get("title"), frame_matches=[])
+        try:
+            prefix = "" if total == 1 else f"{inp.file_id}_"
+            times = clip.get("frame_times_s") or []
+            src = archive_source(clip)
+            if src is None:
+                limitations.append(f"The archived source file for {clip['clip_id']} was not found, so archive "
+                                   "frames are not shown")
+            still = load_image(src) if src is not None and media_kind(src) == "image" else None
+            failed = False
+            for ui, ai, d in spread_pairs(best["pairs"], config.PRIOR_TIME_MACHINE_MAX_PAIRS):
+                archive_s = times[ai] if ai < len(times) else round(ai / float(clip.get("sample_fps") or 1.0), 3)
+                up_ref = f"frames/{prefix}up_{ui:03d}.jpg"
+                _save_jpg(frames[ui][1], ctx.artifact_path(up_ref))
+                ar_ref = None
+                if src is not None:
+                    try:
+                        img = still if still is not None else frame_at(src, archive_s)[1]
+                        ar_ref = f"frames/{prefix}ar_{ai:03d}.jpg"
+                        _save_jpg(img, ctx.artifact_path(ar_ref))
+                    except Exception:  # noqa: BLE001 - a frame we can't read is shown as missing, not a crash
+                        ar_ref, failed = None, True
+                out["frame_matches"].append({
+                    "upload_s": frames[ui][0], "archive_s": archive_s, "hamming": d,
+                    "upload_frame": ctx.artifact_ref(up_ref),
+                    "archive_frame": ctx.artifact_ref(ar_ref) if ar_ref else None,
+                })
+            if failed:
+                limitations.append(f"Some archive frames of {clip['clip_id']} could not be read, so they are not shown")
+        except Exception as exc:  # noqa: BLE001 - the Time Machine is a display aid; never fail the finding
+            out["frame_matches"] = []
+            limitations.append(f"Matched frames could not be saved for display ({type(exc).__name__})")
+        return out
 
     def _no_archive(self, why: str, n: int) -> Finding:
         return self.finding(

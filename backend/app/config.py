@@ -288,6 +288,10 @@ PRIOR_HIGH_MAX_MEDIAN_HAMMING = 1.5  # consistent/contradiction (high) only if t
                                      # takes (4K original archived): true copies (1080p, WhatsApp-style 848/640 px CRF 28)
                                      # median 0-1.0; OTHER takes of the same scene that pass the frame rule median 2-8
                                      # (13 pairs at 2). 1.5 = widest margin; the gap is clean but only 1 bit wide.
+# Live Desk "Time Machine" (§14): matched upload/archive frame pairs saved as JPGs in artifacts/frames/.
+PRIOR_TIME_MACHINE_MAX_PAIRS = 5     # at most 5 pairs, spread across the upload (best match per time chunk)
+PRIOR_TIME_MACHINE_WIDTH = 640       # px, JPG width (display only; hashing is unaffected)
+PRIOR_TIME_MACHINE_JPEG_QUALITY = 80
 
 
 # =============================================================================
