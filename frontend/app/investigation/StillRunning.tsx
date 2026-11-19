@@ -1,18 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { LoaderCircle } from "lucide-react";
 import { API_URL } from "@/lib/api";
 
 /**
  * Shown while GET /api/investigations/{id} answers 202 {status: "running"} (an async run, e.g. from
- * the Telegram bot). Checks again every 2 s and refreshes the page as soon as the answer changes,
- * so the finished investigation (or its error) is rendered by the server as usual.
+ * the Telegram bot). Checks again every 2 s and calls onDone as soon as the answer changes, so the
+ * page loads the finished investigation (or shows its error).
  */
-export default function StillRunning({ id }: { id: string }) {
-  const router = useRouter();
+export default function StillRunning({ id, onDone }: { id: string; onDone: () => void }) {
   const [seconds, setSeconds] = useState(0);
 
   useEffect(() => {
@@ -27,7 +25,7 @@ export default function StillRunning({ id }: { id: string }) {
         if (!stopped && response.status !== 202) {
           stopped = true;
           clearInterval(timer);
-          router.refresh();
+          onDone();
         }
       } catch {
         // API briefly unreachable: keep checking.
@@ -37,7 +35,7 @@ export default function StillRunning({ id }: { id: string }) {
       stopped = true;
       clearInterval(timer);
     };
-  }, [id, router]);
+  }, [id, onDone]);
 
   return (
     <main className="min-h-screen bg-[#0D1012] text-zinc-100">

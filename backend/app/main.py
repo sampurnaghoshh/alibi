@@ -299,3 +299,10 @@ def health() -> dict[str, Any]:
             for w in all_witnesses()
         ],
     }
+
+
+# --- the frontend (static export), served last so every route above wins ---------------------
+# Only when frontend/out exists (Docker image / after `npm run build`); in development the Next.js
+# dev server on port 3000 serves it instead.
+if (config.FRONTEND_DIR / "index.html").is_file():
+    app.mount("/", StaticFiles(directory=config.FRONTEND_DIR, html=True), name="frontend")

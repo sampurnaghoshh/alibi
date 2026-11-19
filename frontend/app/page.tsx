@@ -77,7 +77,7 @@ export default function Home() {
         sharedOn
       );
 
-      router.push(`/investigation/${investigation.id}`);
+      router.push(`/investigation/?id=${encodeURIComponent(investigation.id)}`);
     } catch (err) {
       setError(
         err instanceof Error
@@ -96,7 +96,7 @@ export default function Home() {
 
     try {
       const investigation = await runDemoCase(demo.name);
-      router.push(`/investigation/${investigation.id}`);
+      router.push(`/investigation/?id=${encodeURIComponent(investigation.id)}`);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Demo investigation failed."

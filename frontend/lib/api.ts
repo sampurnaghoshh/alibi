@@ -2,8 +2,11 @@
 import type { Investigation } from "./types";
 import fixture from "../../shared/fixtures/sample_investigation.json";
 
+// Where the ALIBI API lives. Deployed (Docker / Hugging Face) the frontend is served by the API itself,
+// so NEXT_PUBLIC_API_URL is set to "" at build time and every call is same-origin ("/api/...").
+// For `npm run dev` it is unset and falls back to the local backend on port 8000.
 export const API_URL = (
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 ).replace(/\/$/, "");
 
 /** What GET /api/investigations/{id} said: a finished run, still running (202), not found, or an error. */

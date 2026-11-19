@@ -1,9 +1,9 @@
-import { getInvestigationState } from "@/lib/api";
+"use client";
+
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import type { Investigation } from "@/lib/types";
 import { AudioWaveform, CloudRain, FileSearch, History, ScanEye, Zap, type LucideIcon } from "lucide-react";
 import EvidenceGraph from "./EvidenceGraph";
-import StillRunning from "./StillRunning";
 import { statusStyles, statusLabels } from "@/lib/status";
 
 // Same witness icons as the Live Desk (backend/app/live/static/live.js).
@@ -16,7 +16,7 @@ const WITNESS_ICON: Record<string, LucideIcon> = {
   ela: ScanEye,
 };
 
-function Problem({ title, message }: { title: string; message: string }) {
+export function Problem({ title, message }: { title: string; message: string }) {
   return (
     <main className="min-h-screen bg-[#0D1012] text-zinc-100">
       <div className="mx-auto max-w-xl px-6 py-32 text-center">
@@ -30,19 +30,8 @@ function Problem({ title, message }: { title: string; message: string }) {
   );
 }
 
-export default async function InvestigationPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id } = await params;
-  const state = await getInvestigationState(id);
-  if (state.status === "running") return <StillRunning id={id} />;   // 202: poll until done
-  if (state.status === "missing") notFound();
-  if (state.status === "error") {
-    return <Problem title="This investigation could not be shown" message={state.message} />;
-  }
-  const investigation = state.investigation;
+/** One finished investigation, drawn from the Investigation JSON (CLAUDE.md section 4.4). */
+export default function InvestigationView({ investigation }: { investigation: Investigation }) {
   const { assessment, findings, claims, inputs } = investigation;
   const priority = assessment.human_review === "priority";
 

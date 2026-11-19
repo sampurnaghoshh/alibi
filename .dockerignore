@@ -1,0 +1,25 @@
+# Keep secrets, local runs and heavy local folders out of the Docker build context.
+.git
+**/.env
+**/.env.*
+!**/.env.example
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+backend/.venv
+frontend/node_modules
+frontend/.next
+frontend/out
+# Local investigations, the API cache (the image gets deploy/seed-cache instead) and the bot's chat list
+data/runs/*
+!data/runs/.gitkeep
+data/cache/*
+!data/cache/.gitkeep
+data/bot_chats.json
+data/bot_chats.tmp
+# Large local phone clips in demo/ are not in git either (data/archive/*.MOV are, and are needed)
+demo/**/*.MOV
+demo/**/*.mov
+.claude
+.vscode
+docs

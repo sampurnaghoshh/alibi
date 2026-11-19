@@ -40,6 +40,9 @@ DEFAULT_TZ = timezone(timedelta(hours=5, minutes=30))
 
 # API
 CORS_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"]
+# The Next.js frontend as a static export (`npm run build` -> frontend/out). When the folder exists,
+# the API serves it at "/" (one URL for the frontend, /live and /api/*: Docker / Hugging Face Space).
+FRONTEND_DIR = Path(os.getenv("ALIBI_FRONTEND_DIR", REPO_ROOT / "frontend" / "out"))
 
 # Upload limits (checked before anything is stored)
 MAX_UPLOAD_FILES = 5
