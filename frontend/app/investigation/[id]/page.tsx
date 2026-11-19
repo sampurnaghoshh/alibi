@@ -1,38 +1,59 @@
 
-import investigation from "../../../../shared/fixtures/sample_investigation.json";
+import { getInvestigation } from "@/lib/api";
 import Link from "next/link";
 import EvidenceGraph from "./EvidenceGraph";
+import { statusStyles, statusLabels } from "@/lib/status";
 
-const statusStyles: Record<string, string> = {
-  contradiction: "border-red-500/30 bg-red-500/10 text-red-400",
-  consistent: "border-emerald-500/30 bg-emerald-500/10 text-emerald-400",
-  inconclusive: "border-zinc-500/30 bg-zinc-500/10 text-zinc-400",
-  insufficient_signal: "border-amber-500/30 bg-amber-500/10 text-amber-400",
-  not_applicable: "border-zinc-700 bg-zinc-800/50 text-zinc-500",
-};
-
-const statusLabels: Record<string, string> = {
-  contradiction: "Contradiction",
-  consistent: "Consistent",
-  inconclusive: "Inconclusive",
-  insufficient_signal: "Insufficient signal",
-  not_applicable: "Not applicable",
-};
-
-export default function InvestigationPage() {
+export default async function InvestigationPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  const investigation = await getInvestigation(id);
   const { assessment, findings, claims, inputs } = investigation;
 
 const caption = investigation.caption;
 
-const highlightedCaption = [
-  { text: caption.slice(0, 8), highlighted: false },
-  { text: caption.slice(8, 16), highlighted: true },
-  { text: caption.slice(16, 20), highlighted: false },
-  { text: caption.slice(20, 27), highlighted: true },
-  { text: caption.slice(27, 28), highlighted: false },
-  { text: caption.slice(28, 45), highlighted: true },
-  { text: caption.slice(45), highlighted: false },
-];
+const highlightedCaption = [...claims]
+  .sort((a, b) => a.source.start - b.source.start)
+  .reduce(
+    (parts, claim) => {
+      const previousEnd = parts[parts.length - 1].end;
+      const start = Math.max(previousEnd, claim.source.start);
+      const end = Math.max(start, claim.source.end);
+
+      if (start > previousEnd) {
+        parts.push({
+          text: caption.slice(previousEnd, start),
+          highlighted: false,
+          end: start,
+        });
+      }
+
+      if (end > start) {
+        parts.push({
+          text: caption.slice(start, end),
+          highlighted: true,
+          end,
+        });
+      }
+
+      return parts;
+    },
+    [{ text: "", highlighted: false, end: 0 }]
+  )
+  .slice(1);
+
+const lastEnd = highlightedCaption[highlightedCaption.length - 1]?.end ?? 0;
+
+if (lastEnd < caption.length) {
+  highlightedCaption.push({
+    text: caption.slice(lastEnd),
+    highlighted: false,
+    end: caption.length,
+  });
+}
 
 
   return (
@@ -66,9 +87,8 @@ const highlightedCaption = [
               {assessment.headline_text}
             </h1>
             <p className="mt-3 text-sm text-zinc-400">
-              This assessment summarizes available evidence indicators. Human
-              review is required before drawing conclusions.
-            </p>
+  Human review required. This is an evidence report, not a verdict.
+</p>
           </div>
         </section>
 
@@ -97,52 +117,45 @@ const highlightedCaption = [
     Highlighted text represents extracted claim spans from the original caption.
   </p>
 </section>
+<section className="grid gap-5 md:grid-cols-3">
+  <div className="rounded-xl border border-white/10 bg-[#131720] p-5">
+    <p className="text-xs tracking-widest text-zinc-500">
+      EXPERIMENTAL INDEX
+    </p>
 
+    {assessment.experimental_score ? (
+      <>
+        <p className="mt-2 text-xl font-medium text-zinc-400">
+          {assessment.experimental_score.value}
+          <span className="text-sm text-zinc-500">/100</span>
+        </p>
+        <p className="mt-3 text-xs text-zinc-500">
+          {assessment.experimental_score.label}
+        </p>
+      </>
+    ) : (
+      <p className="mt-2 text-sm text-zinc-500">Not available</p>
+    )}
+  </div>
 
-        <section className="grid grid-cols-2 gap-3 md:grid-cols-5">
-          {Object.entries(assessment.counts).map(([status, count]) => (
-            <div
-              key={status}
-              className="rounded-xl border border-white/10 bg-[#131720] p-4"
-            >
-              <p className="text-xs capitalize text-zinc-500">
-                {status.replaceAll("_", " ")}
-              </p>
-              <p className="mt-2 text-3xl font-semibold">{count}</p>
-            </div>
-          ))}
-        </section>
-
-        <section className="grid gap-5 md:grid-cols-3">
-          <div className="rounded-xl border border-white/10 bg-[#131720] p-5">
-            <p className="text-xs tracking-widest text-zinc-500">
-              EXPERIMENTAL INDEX
-            </p>
-            <p className="mt-3 text-5xl font-semibold">
-              {assessment.experimental_score.value}
-              <span className="text-xl text-zinc-500">/100</span>
-            </p>
-            <p className="mt-3 text-xs text-zinc-500">
-              {assessment.experimental_score.label}
-            </p>
-          </div>
-
-          <div className="rounded-xl border border-white/10 bg-[#131720] p-5 md:col-span-2">
-            <p className="text-xs tracking-widest text-zinc-500">MEDIA INPUT</p>
-            {inputs.map((file) => (
-              <div key={file.file_id} className="mt-4">
-                <p className="font-medium">{file.name}</p>
-                <p className="mt-1 text-xs text-zinc-500">
-                  VIDEO · {(file.size / 1024 / 1024).toFixed(2)} MB ·{" "}
-                  {file.duration_s}s
-                </p>
-                <p className="mt-3 break-all font-mono text-xs text-zinc-600">
-                  SHA-256: {file.sha256}
-                </p>
-              </div>
-            ))}
-          </div>
-        </section>
+  <div className="rounded-xl border border-white/10 bg-[#131720] p-5 md:col-span-2">
+    <p className="text-xs tracking-widest text-zinc-500">MEDIA INPUT</p>
+    {inputs.map((file) => (
+      <div key={file.file_id} className="mt-4">
+        <p className="font-medium">{file.name}</p>
+        <p className="mt-1 text-xs text-zinc-500">
+          {file.mime} · {(file.size / 1024 / 1024).toFixed(2)} MB ·{" "}
+          {file.duration_s !== null
+            ? `${file.duration_s}s`
+            : "Duration unavailable"}
+        </p>
+        <p className="mt-3 break-all font-mono text-xs text-zinc-600">
+          SHA-256: {file.sha256}
+        </p>
+      </div>
+    ))}
+  </div>
+</section>
 
         <section>
           <div className="mb-4 flex items-center justify-between">

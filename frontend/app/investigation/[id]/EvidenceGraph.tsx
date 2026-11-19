@@ -18,7 +18,7 @@ const statusColors: Record<string, string> = {
   contradiction: "#dc6666",
   consistent: "#65a98a",
   inconclusive: "#9299a5",
-  insufficient_signal: "#c49b61",
+  insufficient_signal: "#9299a5",
   not_applicable: "#626975",
 };
 
@@ -75,9 +75,10 @@ const nodes: Node<{ label: ReactNode }>[] = investigation.graph.nodes.map(
         width: 220,
         padding: 14,
         background: "#151a22",
-        border: `1px solid ${color}66`,
-        borderRadius: 5,
-        color: "#e4e4e7",
+        border:
+      item.status === "insufficient_signal"
+    ? `2px dashed ${color}99`
+    : `1px solid ${color}66`,
       },
     };
   }
@@ -85,6 +86,7 @@ const nodes: Node<{ label: ReactNode }>[] = investigation.graph.nodes.map(
 
 const edges: Edge[] = investigation.graph.edges.map((edge) => {
   const isContradiction = edge.relation === "contradicts";
+const isSupport = edge.relation === "supports";
 
   return {
     id: edge.id,
@@ -94,7 +96,11 @@ const edges: Edge[] = investigation.graph.edges.map((edge) => {
     label: edge.relation.replaceAll("_", " "),
     markerEnd: {
       type: MarkerType.ArrowClosed,
-      color: isContradiction ? "#dc6666" : "#737b88",
+      color: isContradiction
+  ? "#dc6666"
+  : isSupport
+    ? "#65a98a"
+    : "#737b88",
     },
     style: {
       stroke: isContradiction ? "#dc6666" : "#737b88",
