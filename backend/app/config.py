@@ -45,6 +45,15 @@ CORS_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"]
 MAX_UPLOAD_FILES = 5
 MAX_UPLOAD_BYTES = 200 * 1024 * 1024        # per file
 
+# Live Desk (§14). Caption re-runs (POST /api/investigations/{id}/rerun) repeat the witnesses whose
+# result depends on the caption's claims and re-use the rest from the original run.
+RERUN_CAPTION_DEPENDENT = ("metadata", "weather", "prior_appearance", "enf")   # ENF: verdict uses the claimed country
+RERUN_REUSED = ("ela", "lipsync")
+LIVE_BACKGROUND_WORKERS = 2          # async investigations running at once
+LIVE_SSE_POLL_S = 0.2                # how often the event stream checks history.jsonl for new lines
+LIVE_SSE_KEEPALIVE_S = 15.0
+LIVE_SSE_MAX_S = 600.0               # an event stream closes after this long
+
 # Demo presets (POST /api/demo/{case}): cases are read from this file; file paths in it are
 # relative to the repo root and must stay inside demo/.
 DEMO_CAPTIONS = REPO_ROOT / "demo" / "captions.md"
@@ -102,10 +111,25 @@ ELA_HOTSPOT_MIN_LEVEL = 2.0          # ... and >= 2 (of 255, before amplificatio
 ELA_HOTSPOT_MAX_FRACTION = 0.5       # hotspots covering > 50% of the frame are not "localised"
 ELA_MAX_INPUTS = 3                   # analyse at most this many images/videos per investigation
 
+# Weather (§6.3, taken over from Adithi). Starting values from the spec; the rules are unchanged.
+WEATHER_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+WEATHER_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
+WEATHER_MAX_PAST_DAYS = 92           # forecast API's past_days limit; anything older -> archive API (ERA5)
+WEATHER_GRID_OFFSET_DEG = 0.15       # N/S/E/W points, about 15 km
+WEATHER_DRY_POINT_MM = 1.0           # (a) centre < 1 mm and (b) grid max < 1 mm ...
+WEATHER_DRY_72H_MM = 5.0             # ... and (c) 72 h < 5 mm -> contradiction
+WEATHER_WET_POINT_MM = 10.0          # (a) >= 10 mm ...
+WEATHER_WET_72H_MM = 30.0            # ... or (c) >= 30 mm -> consistent
+WEATHER_TIMEOUT_S = 8.0              # one request for all 5 points
+WEATHER_FORECAST_CACHE_TTL_S = 3600  # refresh cached forecast data after ~1 h when online; archive is cached forever
+
 # Archive builder (§6.4, scripts/build_archive.py, taken over from Adithi).
 # Hand-edited list of verified clips; the builder adds frame hashes and writes ARCHIVE_JSON.
 # Sampling must match the prior_appearance witness: both use app/media.py with PRIOR_SAMPLE_FPS.
 ARCHIVE_MANIFEST = DATA_DIR / "archive" / "manifest.json"
+# Sampled frames are shrunk to this width before hashing (pHash only looks at 32x32 anyway).
+# Changing it changes every hash: rebuild data/archive/archive.json afterwards.
+FRAME_SAMPLE_MAX_WIDTH = 640
 
 # Runtime LLM (claim extraction + explanations only; never decides truth)
 LLM_PROVIDER = os.getenv("ALIBI_LLM_PROVIDER", "none").strip().lower()   # anthropic | gemini | none
@@ -156,17 +180,54 @@ LLM_EFFORT = "low"                   # Anthropic effort: short extraction/reword
 # --- Nooman: lipsync + enf ---
 # =============================================================================
 
-# Lip-sync synchrony indicator (§6.5). Calibrate on >= 5 genuine phone clips.
-LIPSYNC_MIN_FACE_FRACTION = 0.50     # face detected in >= 50% of sampled frames
+# Lip-sync synchrony indicator (§6.5). Calibrate on >= 5 genuine phone clips + swapped-audio controls
+# (scripts/calibrate_lipsync.py). ONE lag per clip from all speech frames; 3 s windows only show where sync drops.
+LIPSYNC_FACE_MODEL = DATA_DIR / "models" / "face_landmarker.task"   # MediaPipe Tasks model, see data/models/README.md
+LIPSYNC_MOUTH_FEATURE = "velocity"   # "aperture" | "velocity" (|d aperture / frame|). Calibrated 2026-11-19 on
+                                     # 5 genuine iPhone clips + 5 audio-swapped controls: velocity corr overlapped
+                                     # least (genuine min 0.115 vs swapped max 0.147); aperture overlapped more.
+# FALLBACK (§6.5), calibrated 2026-11-19: no metric (corr, prominence, |lag|; either feature) separated genuine
+# from swapped clips cleanly, so every lip-sync finding is capped at LOW reliability: it can only ever be a
+# weak indicator, never set the signal family or the headline.
+LIPSYNC_MAX_RELIABILITY = "low"
+# Genuine/swapped didn't separate in calibration on 5+5 clips, so pending Sampurna's decision. While False,
+# lip-sync is ALWAYS inconclusive (low) until recalibration: any rule result (contradiction OR consistent) is
+# reported as inconclusive, with the raw lag/corr/prominence and the rule outcome in details.
+LIPSYNC_ALLOW_CONTRADICTION = False
+LIPSYNC_MIN_FACE_HEIGHT = 0.25       # STARTING VALUE: median face height (forehead-chin) / frame height below
+                                     # this -> inconclusive/low "face too small for a reliable synchrony measurement"
+LIPSYNC_MAX_INPUTS = 2               # analyse at most 2 videos per investigation (runner limit is 90 s; ~10-35 s each)
+LIPSYNC_MAX_LOCATIONS = 3            # worst windows (lowest corr at the clip lag) reported as timestamps
+LIPSYNC_MIN_FACE_FRACTION = 0.50     # face detected in >= 50% of sampled frames, else not_applicable
 LIPSYNC_SMOOTH_FRAMES = 3            # median filter on mouth aperture
+LIPSYNC_MAX_GAP_FRAMES = 5           # interpolate face dropouts up to 5 frames; longer stay missing
+LIPSYNC_ANALYSIS_FPS = 30.0          # constant analysis rate (iPhone ~29.83 fps VFR); +/-0.3 s = +/-9 frames
+LIPSYNC_FRAME_MAX_SIDE = 960         # downscale 4K before landmarking (1920 tested: same numbers, slower)
+LIPSYNC_MAX_LAG_S = 0.30             # clip-level cross-correlation search range +/-
+LIPSYNC_MIN_SPEECH_S = 2.0           # need >= 2 s of speech frames with a face, else insufficient_signal
+# Audio: speech-band loudness in dB.
+LIPSYNC_AUDIO_SR = 16000
+LIPSYNC_BAND_HZ = (300.0, 3000.0)    # band-pass before RMS (drops hum, rumble and hiss)
+LIPSYNC_RMS_HOP_S = 0.010            # loudness at 100 Hz, then interpolated onto video frame times
+LIPSYNC_RMS_FRAME_S = 0.040
+LIPSYNC_DB_FLOOR = -90.0             # dB floor for digital silence
+LIPSYNC_SPEECH_FLOOR_PCT = 10        # adaptive speech mask (dB): noise floor = 10th percentile ...
+LIPSYNC_SPEECH_PEAK_PCT = 95         # ... peak = 95th percentile ...
+LIPSYNC_SPEECH_THRESH_FRAC = 0.50    # ... speech if dB > floor + 0.50 * (peak - floor)
+LIPSYNC_SPEECH_MIN_RANGE_DB = 6.0    # peak - floor < 6 dB -> no speech anywhere (flat audio)
+# Display windows.
 LIPSYNC_WINDOW_S = 3.0
 LIPSYNC_STEP_S = 1.0
-LIPSYNC_MAX_LAG_S = 0.5              # cross-correlation search range +/-
-LIPSYNC_CONSISTENT_MAX_LAG_S = 0.12  # median |lag| <= this ...
-LIPSYNC_CONSISTENT_MIN_CORR = 0.30   # ... and median corr >= this -> consistent
-LIPSYNC_CONTRA_MIN_LAG_S = 0.25      # median |lag| >= this ...
-LIPSYNC_CONTRA_MAX_CORR = 0.10       # ... or median corr < this -> contradiction
+LIPSYNC_WINDOW_MIN_SPEECH = 0.30     # a window is a "speech window" if >= 30% of its frames are speech
+LIPSYNC_WINDOW_MIN_FACE = 0.80       # ... and the face was found in >= 80% of its frames
 LIPSYNC_MIN_SPEECH_FRACTION = 0.50   # contradiction needs speech in >= 50% of windows
+# Status thresholds on the clip-level numbers. STARTING VALUES (§6.5), prominence = best corr - median corr over lags.
+LIPSYNC_CONSISTENT_MAX_LAG_S = 0.12  # |lag| <= this ...
+LIPSYNC_CONSISTENT_MIN_CORR = 0.30   # ... and corr >= this ...
+LIPSYNC_CONSISTENT_MIN_PROMINENCE = 0.0   # ... and prominence >= this -> consistent (placeholder until calibrated)
+LIPSYNC_CONTRA_MIN_LAG_S = 0.25      # |lag| >= this ...
+LIPSYNC_CONTRA_MAX_CORR = 0.10       # ... or corr < this ...
+LIPSYNC_CONTRA_MAX_PROMINENCE = -1.0 # ... or prominence < this -> contradiction (placeholder: off until calibrated)
 
 # ENF power-grid hum (§6.6). Conditional on the hour-1 go/no-go test.
 ENF_GO = False                       # set True ONLY if 50/100 Hz was found in >= 3 of 5 venue clips
@@ -191,16 +252,7 @@ METADATA_EDITING_SOFTWARE = [
     "premiere", "after effects", "final cut", "davinci", "inshot", "kinemaster",
 ]
 
-# Weather (§6.3)
-WEATHER_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
-WEATHER_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
-WEATHER_RECENT_DAYS = 90             # newer than this -> forecast API with past_days
-WEATHER_PAST_DAYS = 7
-WEATHER_GRID_OFFSET_DEG = 0.15       # N/S/E/W points, about 15 km
-WEATHER_DRY_POINT_MM = 1.0           # (a) centre < 1 mm and (b) grid max < 1 mm ...
-WEATHER_DRY_72H_MM = 5.0             # ... and (c) 72 h < 5 mm -> contradiction
-WEATHER_WET_POINT_MM = 10.0          # (a) >= 10 mm ...
-WEATHER_WET_72H_MM = 30.0            # ... or (c) >= 30 mm -> consistent
+# Weather moved to the Sampurna section (handed over by Adithi).
 
 # Prior appearance (§6.4)
 PRIOR_SAMPLE_FPS = 1.0

@@ -48,6 +48,7 @@ def test_summary_from_fixture(raw):
     assert s == {
         "id": raw["id"],
         "created_at": raw["created_at"],
+        "parent_id": None,
         "caption": raw["caption"],
         "inputs": ["chennai_flood.mp4"],
         "headline": raw["assessment"]["headline"],

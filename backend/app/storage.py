@@ -6,8 +6,12 @@ Layout of one investigation:
     data/runs/<inv_id>/
         originals/<file_id>_<name>   uploads, read-only, never modified
         artifacts/                   everything derived (frames, heatmaps, spectrograms)
-        history.jsonl                append-only chain-of-custody log
+        history.jsonl                append-only chain-of-custody log (also the live event stream)
         investigation.json           the final Investigation
+
+history.jsonl lines are {ts, event, detail} plus an optional "data" payload (claims, finding,
+assessment, graph) that the live event stream (GET /api/investigations/{id}/events) sends on.
+Investigation.history exposes only {ts, event, detail}.
 """
 
 from __future__ import annotations
@@ -21,9 +25,10 @@ import shutil
 import stat
 import string
 import subprocess
+import threading
 from datetime import datetime
 from pathlib import Path
-from typing import BinaryIO, Optional
+from typing import Any, BinaryIO, Optional
 
 from app import config
 from app.schemas import INVESTIGATION_ID_PATTERN, HistoryEvent, InputFile, Investigation
@@ -104,6 +109,7 @@ class RunStore:
         self.artifacts_dir = self.run_dir / "artifacts"
         self.history_path = self.run_dir / "history.jsonl"
         self.investigation_path = self.run_dir / "investigation.json"
+        self._log_lock = threading.Lock()   # witnesses log from several threads
 
     @classmethod
     def create(cls, root: Optional[Path] = None) -> "RunStore":
@@ -114,6 +120,15 @@ class RunStore:
 
     def exists(self) -> bool:
         return self.investigation_path.is_file()
+
+    def status(self) -> Optional[str]:
+        """'done' | 'failed' | 'running' for an existing run folder, None if there is no such run."""
+        if self.investigation_path.is_file():
+            return "done"
+        if not self.run_dir.is_dir():
+            return None
+        events = self.events()
+        return "failed" if events and events[-1]["event"] == "failed" else "running"
 
     # Originals ---------------------------------------------------------------
 
@@ -146,27 +161,51 @@ class RunStore:
         detail = f"{filename} sha256={info.sha256} stored read-only at {info.stored_path}"
         if declared_mime and declared_mime not in (mime, "application/octet-stream"):
             detail += f" (declared {declared_mime}, detected {mime} from file content)"
-        self.log("file_received", detail)
+        self.log("file_received", detail, data={"input": info.model_dump(mode="json")})
         return info, dest
 
     def verify_original(self, info: InputFile) -> bool:
         """Re-hash a stored original and compare with the recorded SHA-256."""
         return sha256_file(self.run_dir / info.stored_path) == info.sha256
 
+    def copy_original_from(self, parent: "RunStore", info: InputFile) -> tuple[InputFile, Path]:
+        """Copy a parent run's original into this run (caption re-runs), checking its SHA-256 first."""
+        src = parent.run_dir / info.stored_path
+        if sha256_file(src) != info.sha256:
+            raise ValueError(f"{info.name}: stored original no longer matches its recorded SHA-256")
+        dest = self.run_dir / info.stored_path
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(src, dest)
+        os.chmod(dest, stat.S_IREAD)
+        self.log("file_received",
+                 f"{info.name} sha256={info.sha256} copied read-only from {parent.inv_id}/{info.stored_path} "
+                 f"(hash verified)", data={"input": info.model_dump(mode="json"), "copied_from": parent.inv_id})
+        return info, dest
+
     # History (chain of custody) ---------------------------------------------
 
-    def log(self, event: str, detail: str = "") -> HistoryEvent:
+    def log(self, event: str, detail: str = "", data: Optional[dict[str, Any]] = None) -> HistoryEvent:
+        """Append one event. `data` (JSON-serialisable) is kept for the live event stream only."""
         ev = HistoryEvent(ts=now(), event=event, detail=detail)
-        self.run_dir.mkdir(parents=True, exist_ok=True)
-        with open(self.history_path, "a", encoding="utf-8") as fh:
-            fh.write(ev.model_dump_json() + "\n")
+        line = json.loads(ev.model_dump_json())
+        if data is not None:
+            line["data"] = data
+        with self._log_lock:
+            self.run_dir.mkdir(parents=True, exist_ok=True)
+            with open(self.history_path, "a", encoding="utf-8") as fh:
+                fh.write(json.dumps(line, ensure_ascii=False) + "\n")
         return ev
 
-    def history(self) -> list[HistoryEvent]:
+    def events(self) -> list[dict[str, Any]]:
+        """Raw history lines, including data payloads."""
         if not self.history_path.exists():
             return []
         lines = self.history_path.read_text(encoding="utf-8").splitlines()
-        return [HistoryEvent.model_validate_json(line) for line in lines if line.strip()]
+        return [json.loads(line) for line in lines if line.strip()]
+
+    def history(self) -> list[HistoryEvent]:
+        """The chain-of-custody log as it appears in the contract (no data payloads)."""
+        return [HistoryEvent(ts=e["ts"], event=e["event"], detail=e.get("detail", "")) for e in self.events()]
 
     # Investigation JSON -------------------------------------------------------
 

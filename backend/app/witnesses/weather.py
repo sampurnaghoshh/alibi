@@ -1,29 +1,220 @@
+"""
+Weather witness (CLAUDE.md §6.3). Owner: Sampurna (taken over from Adithi; first version by Adithi).
+Family: context. Max reliability: medium.
+
+Question: does recorded rainfall at the claimed place and time support a rain / flood claim?
+
+How it works
+  - One Open-Meteo request for 5 points (centre + N/S/E/W at ±0.15°), times in UTC.
+  - Recent claims use the forecast API with past_days sized to the claim (max 92); older ones
+    use the archive API (ERA5).
+  - Only hours that had already happened when the media was shared (and before now) count.
+    Forecast hours are never treated as evidence; a window that runs past that point is
+    incomplete, so the result is inconclusive.
+  - Three numbers, as in the spec: (a) rain at the centre during the claimed window,
+    (b) max rain at the 4 surrounding points over the claimed day(s), (c) centre rain over the
+    72 h up to the end of the window. Each hourly value is the rain in the hour BEFORE its
+    timestamp, so a window counts timestamps with start < t <= end.
+  - Rules for flood / heavy_rain / rain claims (thresholds in config.py):
+        (a) < 1 mm and (b) < 1 mm and (c) < 5 mm      -> contradiction (medium)
+        (a) >= 10 mm or (c) >= 30 mm                  -> consistent (medium)
+        otherwise / incomplete data                   -> inconclusive (low)
+    dry / storm / other claims: numbers shown for reference only, always inconclusive.
+  - Cache (data/cache/): archive answers forever; forecast answers are refreshed after ~1 h when
+    online, and an older copy is used when offline.
+
+Run alone (from backend/):
+    python -m app.witnesses.weather --caption "Massive flooding in Chennai yesterday evening" --posted-at 2026-11-19
+"""
+
 from __future__ import annotations
 
 import hashlib
 import json
 import logging
-from datetime import date, datetime, timedelta
+import math
+import time
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import requests
 
 from app import config
+from app.schemas import Claim, Finding
+from app.storage import now as _clock
 from app.witnesses.base import InvestigationContext, Witness, run_cli
 
+log = logging.getLogger("alibi.weather")
 
-logger = logging.getLogger(__name__)
-
+RAIN_CONDITIONS = {"flood": "flooding", "heavy_rain": "heavy rain", "rain": "rain"}
+POINT_LABELS = ["centre", "N", "S", "E", "W"]
+HOUR = timedelta(hours=1)
 
 ALTERNATIVES = [
-    "Rain may have occurred upstream or elsewhere in the catchment.",
-    "Flooding may have resulted from drainage failure or blocked waterways.",
-    "Reservoir release or water overflow may have caused flooding.",
-    "Localized rainfall may not be captured by the weather grid.",
-    "Weather station or gridded precipitation estimates may differ from actual rainfall.",
+    "Rain upstream or in the catchment may not show up in a small local grid",
+    "Flooding can come from drainage failure, blocked waterways or reservoir release",
+    "Very localised rain can fall below the grid's resolution",
+    "Gridded model and reanalysis rainfall can differ from what rain gauges recorded",
+]
+BASE_LIMITATIONS = [
+    "Rainfall comes from Open-Meteo model and reanalysis grids (about 10-25 km), not from rain gauges",
+    "Weather records cannot confirm or rule out non-rain causes of flooding",
 ]
 
+
+def now() -> datetime:
+    """Current time (patched in tests)."""
+    return _clock()
+
+
+# =============================================================================
+# Claims and windows
+# =============================================================================
+
+@dataclass
+class ClaimedWindow:
+    start: datetime
+    end: datetime
+    precision: str
+
+    @property
+    def span(self) -> tuple[datetime, datetime]:
+        """The claimed window widened to whole local days (used for the grid points)."""
+        tz = self.start.tzinfo
+        s = datetime(self.start.year, self.start.month, self.start.day, tzinfo=tz)
+        last = self.end - timedelta(seconds=1)
+        e = datetime(last.year, last.month, last.day, tzinfo=tz) + timedelta(days=1)
+        return s, e
+
+
+def _first(claims: list[Claim], key: str) -> Optional[Claim]:
+    return next((c for c in claims if c.normalized and c.normalized.get(key) is not None), None)
+
+
+def _window(claim: Claim) -> ClaimedWindow:
+    n = claim.normalized or {}
+    start, end = datetime.fromisoformat(n["start"]), datetime.fromisoformat(n["end"])
+    if start.tzinfo is None:
+        start = start.replace(tzinfo=config.DEFAULT_TZ)
+    if end.tzinfo is None:
+        end = end.replace(tzinfo=config.DEFAULT_TZ)
+    if end <= start:
+        raise ValueError("claimed end is not after start")
+    return ClaimedWindow(start, end, n.get("precision", "day"))
+
+
+def _date_label(d: datetime, ref_year: int) -> str:
+    return f"{d.day} {d:%b}" + (f" {d.year}" if d.year != ref_year else "")
+
+
+def describe_window(w: ClaimedWindow, ref_year: int) -> str:
+    """'during 17:00–21:00 on 18 Nov' / 'on 18 Nov' / 'between 12 Nov and 18 Nov'."""
+    if w.precision in ("part_of_day", "hour"):
+        return f"during {w.start:%H:%M}–{w.end:%H:%M} on {_date_label(w.start, ref_year)}"
+    last = w.end - timedelta(seconds=1)
+    if w.start.date() == last.date():
+        return f"on {_date_label(w.start, ref_year)}"
+    return f"between {_date_label(w.start, ref_year)} and {_date_label(last, ref_year)}"
+
+
+# =============================================================================
+# Open-Meteo request, cache, parsing
+# =============================================================================
+
+def grid_points(lat: float, lon: float) -> list[tuple[str, float, float]]:
+    d = config.WEATHER_GRID_OFFSET_DEG
+    return [
+        ("centre", lat, lon),
+        ("N", round(lat + d, 4), lon),
+        ("S", round(lat - d, 4), lon),
+        ("E", lat, round(lon + d, 4)),
+        ("W", lat, round(lon - d, 4)),
+    ]
+
+
+def build_request(points: list[tuple[str, float, float]], need_from: date, need_to: date,
+                  today: date) -> tuple[str, str, dict[str, Any]]:
+    """(api, url, params) for ONE request covering all points from need_from to need_to (UTC dates)."""
+    lats = ",".join(f"{p[1]:.4f}" for p in points)
+    lons = ",".join(f"{p[2]:.4f}" for p in points)
+    common = {"latitude": lats, "longitude": lons, "hourly": "precipitation", "timezone": "UTC"}
+    past_days = (today - need_from).days + 1
+    if past_days <= config.WEATHER_MAX_PAST_DAYS:
+        return "forecast_past_days", config.WEATHER_FORECAST_URL, {
+            **common, "past_days": max(1, past_days), "forecast_days": 1,
+        }
+    return "archive", config.WEATHER_ARCHIVE_URL, {
+        **common, "start_date": need_from.isoformat(), "end_date": need_to.isoformat(),
+    }
+
+
+def request_url(url: str, params: dict[str, Any]) -> str:
+    return requests.Request("GET", url, params=params).prepare().url
+
+
+def _cache_path(api: str, points: list, need_from: date, need_to: date) -> Path:
+    """Keyed by what is needed (place + dates), not by past_days, so a warmed cache still works
+    on a later day."""
+    key = json.dumps([api, [p[1:] for p in points], need_from.isoformat(), need_to.isoformat()])
+    return Path(config.CACHE_DIR) / f"openmeteo_{hashlib.sha256(key.encode()).hexdigest()[:24]}.json"
+
+
+def fetch(api: str, url: str, params: dict, cache_file: Path) -> tuple[list[dict], str]:
+    """Return (one response per point, source) where source is 'network' | 'cache' | 'stale_cache'.
+    Raises on failure when there is nothing usable in the cache."""
+    cached = None
+    if cache_file.exists():
+        try:
+            cached = json.loads(cache_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            cached = None
+    if cached is not None:
+        age = time.time() - cache_file.stat().st_mtime
+        if api == "archive" or age < config.WEATHER_FORECAST_CACHE_TTL_S:
+            return cached, "cache"
+    try:
+        r = requests.get(url, params=params, timeout=config.WEATHER_TIMEOUT_S)
+        r.raise_for_status()
+        data = r.json()
+    except Exception:
+        if cached is not None:
+            return cached, "stale_cache"     # offline: an older copy beats nothing
+        raise
+    data = data if isinstance(data, list) else [data]
+    cache_file.parent.mkdir(parents=True, exist_ok=True)
+    cache_file.write_text(json.dumps(data), encoding="utf-8")
+    return data, "network"
+
+
+def hourly_series(resp: dict) -> list[tuple[datetime, Optional[float]]]:
+    """[(UTC end-of-hour time, mm in the preceding hour)]. Naive times are shifted by utc_offset_seconds."""
+    offset = timedelta(seconds=resp.get("utc_offset_seconds") or 0)
+    hourly = resp.get("hourly") or {}
+    out = []
+    for t, v in zip(hourly.get("time", []), hourly.get("precipitation", [])):
+        ts = datetime.fromisoformat(t)
+        ts = (ts - offset).replace(tzinfo=timezone.utc) if ts.tzinfo is None else ts.astimezone(timezone.utc)
+        out.append((ts, None if v is None else float(v)))
+    return out
+
+
+def rain_between(series, start: datetime, end: datetime, observed_until: datetime) -> tuple[float, bool]:
+    """Sum of hourly values with start < t <= end and t <= observed_until.
+    Complete only if the whole window had happened by observed_until and every hour has a value."""
+    expected = math.ceil((end - start) / HOUR)
+    total, n = 0.0, 0
+    for t, v in series:
+        if start < t <= end and t <= observed_until and v is not None:
+            total += v
+            n += 1
+    return round(total, 1), (end <= observed_until and n >= expected)
+
+
+# =============================================================================
+# Witness
+# =============================================================================
 
 class WeatherWitness(Witness):
     name = "weather"
@@ -31,618 +222,143 @@ class WeatherWitness(Witness):
     implemented = True
 
     def applicable(self, ctx: InvestigationContext) -> bool:
-        return bool(
-            ctx.claims_of("location")
-            and ctx.claims_of("time")
-            and (
-                ctx.claims_of("weather_condition")
-                or ctx.claims_of("event")
-            )
-        )
+        has_condition = bool(ctx.claims_of("weather_condition") or ctx.claims_of("event"))
+        return bool(ctx.claims_of("location") and ctx.claims_of("time") and has_condition)
 
-    def run(self, ctx: InvestigationContext) -> list[Any]:
-        location_claims = ctx.claims_of("location")
-        time_claims = ctx.claims_of("time")
+    def _inconclusive(self, title: str, summary: str, claim_ids: list[str], limitations: list[str],
+                      details: Optional[dict] = None) -> list[Finding]:
+        return [self.finding(status="inconclusive", reliability="low", title=title, summary=summary,
+                             claim_ids=claim_ids, details=details or {}, alternatives=ALTERNATIVES,
+                             limitations=[*limitations, *BASE_LIMITATIONS])]
 
-        condition_claims = (
-            ctx.claims_of("weather_condition")
-            or ctx.claims_of("event")
-        )
+    def run(self, ctx: InvestigationContext) -> list[Finding]:
+        loc = _first(ctx.claims_of("location"), "lat")
+        tclaim = _first(ctx.claims_of("time"), "start")
+        cond_claim = _first(ctx.claims_of("weather_condition") + ctx.claims_of("event"), "condition")
+        claim_ids = [c.id for c in (cond_claim, loc, tclaim) if c is not None]
 
-        if not location_claims or not time_claims or not condition_claims:
-            return [
-                self.finding(
-                    status="inconclusive",
-                    reliability="low",
-                    title="Insufficient weather claims",
-                    summary="Location, time, or weather condition claims are missing.",
-                    details={
-                        "reason": "Required claims were not available."
-                    },
-                    alternatives=ALTERNATIVES,
-                    limitations=[
-                        "Weather verification requires a location, time, and condition."
-                    ],
-                )
-            ]
-
-        location = self._normalized(location_claims[0])
-        time_data = self._normalized(time_claims[0])
-        condition_data = self._normalized(condition_claims[0])
-
-        lat = self._get(location, "lat")
-        lon = self._get(location, "lon")
-
-        claimed_date = self._get(time_data, "date")
-        claimed_start = self._get(time_data, "start")
-        claimed_end = self._get(time_data, "end")
-
-        condition = (
-            self._get(condition_data, "condition")
-            or self._get(condition_data, "event")
-            or ""
-        )
-
-        condition = str(condition).lower().strip()
-
-        claim_ids = [
-            self._claim_id(c)
-            for c in (
-                location_claims[0],
-                time_claims[0],
-                condition_claims[0],
-            )
-            if self._claim_id(c)
-        ]
-
-        if lat is None or lon is None:
-            return [
-                self.finding(
-                    status="inconclusive",
-                    reliability="low",
-                    claim_ids=claim_ids,
-                    title="Weather verification unavailable",
-                    summary="The location claim does not contain usable coordinates.",
-                    details={
-                        "location": location,
-                        "reason": "Missing latitude or longitude.",
-                    },
-                    alternatives=ALTERNATIVES,
-                    limitations=[
-                        "Weather data cannot be queried without coordinates."
-                    ],
-                )
-            ]
-
-        if condition not in {"rain", "heavy_rain", "flood"}:
-            return [
-                self.finding(
-                    status="inconclusive",
-                    reliability="low",
-                    claim_ids=claim_ids,
-                    title="Weather condition not evaluated",
-                    summary="This witness currently evaluates rain and flood-related claims.",
-                    details={
-                        "claimed_condition": condition,
-                    },
-                    alternatives=ALTERNATIVES,
-                    limitations=[
-                        "The rainfall thresholds are designed for rain and flood claims.",
-                        "Other weather conditions are not evaluated by this witness.",
-                    ],
-                )
-            ]
-
+        if loc is None or tclaim is None or cond_claim is None:
+            return self._inconclusive(
+                "Weather check not possible", "The caption needs a place with coordinates, a time and a weather "
+                "or flood condition before rainfall records can be compared.", claim_ids,
+                ["Weather verification requires a location, a time window and a condition"])
         try:
-            start_dt, end_dt = self._claim_window(
-                claimed_date,
-                claimed_start,
-                claimed_end,
-            )
-        except (ValueError, TypeError, OverflowError) as exc:
-            return [
-                self.finding(
-                    status="inconclusive",
-                    reliability="low",
-                    claim_ids=claim_ids,
-                    title="Weather time window unavailable",
-                    summary="The claimed time could not be interpreted.",
-                    details={
-                        "error": str(exc),
-                        "claimed_date": str(claimed_date),
-                        "claimed_start": str(claimed_start),
-                        "claimed_end": str(claimed_end),
-                    },
-                    alternatives=ALTERNATIVES,
-                    limitations=[
-                        "A valid claimed date and time window are required."
-                    ],
-                )
-            ]
+            w = _window(tclaim)
+        except (KeyError, ValueError) as exc:
+            return self._inconclusive("Weather check not possible", "The claimed time could not be interpreted.",
+                                      claim_ids, [f"Error: {exc}"])
 
-        center_lat = float(lat)
-        center_lon = float(lon)
+        condition = cond_claim.normalized["condition"]
+        lat, lon = float(loc.normalized["lat"]), float(loc.normalized["lon"])
+        points = grid_points(lat, lon)
 
-        offset = float(config.WEATHER_GRID_OFFSET_DEG)
+        # Only rain that had already fallen when the media was shared (and before now) is evidence.
+        current = now()
+        posted = ctx.posted_at if ctx.posted_at.tzinfo else ctx.posted_at.replace(tzinfo=config.DEFAULT_TZ)
+        observed_until = min(current, posted).astimezone(timezone.utc)
 
-        points = {
-            "center": (center_lat, center_lon),
-            "north": (center_lat + offset, center_lon),
-            "south": (center_lat - offset, center_lon),
-            "east": (center_lat, center_lon + offset),
-            "west": (center_lat, center_lon - offset),
-        }
+        span_start, span_end = w.span
+        need_start = min(w.start - timedelta(hours=72), span_start).astimezone(timezone.utc)
+        need_end = max(w.end, span_end).astimezone(timezone.utc)
+        api, url, params = build_request(points, need_start.date(), need_end.date(),
+                                         current.astimezone(timezone.utc).date())
+        full_url = request_url(url, params)
+        try:
+            responses, source = fetch(api, url, params, _cache_path(api, points, need_start.date(), need_end.date()))
+            if len(responses) != len(points):
+                raise ValueError(f"expected {len(points)} locations in the response, got {len(responses)}")
+        except Exception as exc:  # noqa: BLE001 - offline or API error -> inconclusive, never a crash
+            return self._inconclusive(
+                "Weather data unavailable",
+                "Rainfall records could not be retrieved for the claimed place and time, so the weather "
+                "gives no evidence either way.", claim_ids,
+                [f"Error: {type(exc).__name__}: {exc}", "No cached copy of this weather data was available"],
+                {"api": api, "request": full_url})
 
-        claimed_date_obj = start_dt.date()
-        cutoff = date.today() - timedelta(
-            days=config.WEATHER_RECENT_DAYS
-        )
+        series = [hourly_series(r) for r in responses]
+        a, a_ok = rain_between(series[0], w.start, w.end, observed_until)
+        c, c_ok = rain_between(series[0], w.end - timedelta(hours=72), w.end, observed_until)
+        day = [rain_between(s, span_start, span_end, observed_until) for s in series]
+        grid_vals = [mm for mm, _ in day[1:]]
+        b, b_ok = max(grid_vals), all(ok for _, ok in day[1:])
 
-        if claimed_date_obj >= cutoff:
-            endpoint = config.WEATHER_FORECAST_URL
-
-            common_params = {
-                "hourly": "precipitation",
-                "daily": "precipitation_sum",
-                "past_days": config.WEATHER_PAST_DAYS,
-                "timezone": "auto",
-            }
-
-        else:
-            endpoint = config.WEATHER_ARCHIVE_URL
-
-            archive_start = (start_dt - timedelta(days=3)).date()
-            archive_end = end_dt.date()
-
-            common_params = {
-                "hourly": "precipitation",
-                "start_date": archive_start.isoformat(),
-                "end_date": archive_end.isoformat(),
-                "timezone": "auto",
-            }
-
-        weather_data: dict[str, Any] = {}
-        errors: dict[str, str] = {}
-
-        for point_name, (point_lat, point_lon) in points.items():
-            params = {
-                **common_params,
-                "latitude": point_lat,
-                "longitude": point_lon,
-            }
-
-            try:
-                weather_data[point_name] = self._cached_request(
-                    endpoint,
-                    params,
-                )
-
-            except Exception as exc:
-                logger.warning(
-                    "Weather fetch failed for %s: %s",
-                    point_name,
-                    exc,
-                )
-
-                errors[point_name] = str(exc)
-
-        center_data = weather_data.get("center")
-
-        if not center_data:
-            return [
-                self.finding(
-                    status="inconclusive",
-                    reliability="low",
-                    claim_ids=claim_ids,
-                    title="Weather data unavailable",
-                    summary="Historical or forecast weather data could not be retrieved for the claimed location.",
-                    details={
-                        "claimed_condition": condition,
-                        "claimed_window": {
-                            "start": start_dt.isoformat(),
-                            "end": end_dt.isoformat(),
-                        },
-                        "errors": errors,
-                    },
-                    alternatives=ALTERNATIVES,
-                    limitations=[
-                        "Weather API data was unavailable for the center point.",
-                        "No conclusion can be drawn without center-point rainfall data.",
-                    ],
-                )
-            ]
-
-        # Rainfall during the claimed time window at the center point.
-        center_rain, center_coverage = self._sum_hourly(
-            center_data,
-            start_dt,
-            end_dt,
-        )
-
-        # Rainfall during the claimed time window at surrounding points.
-        surrounding_rain: dict[str, float | None] = {}
-        surrounding_coverage: dict[str, bool] = {}
-
-        for point_name in ("north", "south", "east", "west"):
-            point_data = weather_data.get(point_name)
-
-            if point_data is None:
-                surrounding_rain[point_name] = None
-                surrounding_coverage[point_name] = False
-                continue
-
-            rainfall, coverage = self._sum_hourly(
-                point_data,
-                start_dt,
-                end_dt,
-            )
-
-            surrounding_rain[point_name] = rainfall
-            surrounding_coverage[point_name] = coverage
-
-        max_surrounding_rain = (
-            max(
-                value
-                for value in surrounding_rain.values()
-                if value is not None
-            )
-            if any(
-                value is not None
-                for value in surrounding_rain.values()
-            )
-            else None
-        )
-
-        # Rainfall over the 72 hours preceding the claimed event end.
-        center_72h, coverage_72h = self._sum_72h(
-            center_data,
-            end_dt,
-        )
-
-        complete_grid = all(surrounding_coverage.values())
-
+        # Artifact + details for the frontend (weather map, chart) and the report.
+        grid = [{"label": label, "lat": plat, "lon": plon, "day_mm": day[i][0],
+                 "window_mm": rain_between(series[i], w.start, w.end, observed_until)[0]}
+                for i, (label, plat, plon) in enumerate(points)][1:]
+        tz = w.start.tzinfo
+        hourly_centre = [{"t": t.astimezone(tz).isoformat(), "mm": v} for t, v in series[0]
+                         if span_start < t <= span_end and t <= observed_until][:24 * 7]
+        art = ctx.artifact_path("weather_grid.json")
+        art.write_text(json.dumps({
+            "request": full_url, "api": api, "source": source, "observed_until": observed_until.isoformat(),
+            "points": [{"label": label, "lat": plat, "lon": plon,
+                        "hourly": [[t.isoformat(), v] for t, v in series[i] if need_start < t <= need_end]}
+                       for i, (label, plat, plon) in enumerate(points)],
+        }, indent=1), encoding="utf-8")
         details = {
+            "api": api,
             "claimed_condition": condition,
-            "coordinates": {
-                "latitude": center_lat,
-                "longitude": center_lon,
-            },
-            "claimed_window": {
-                "start": start_dt.isoformat(),
-                "end": end_dt.isoformat(),
-            },
-            "rainfall_mm": {
-                "center_claimed_window": center_rain,
-                "center_coverage_complete": center_coverage,
-                "surrounding_points": surrounding_rain,
-                "surrounding_coverage": surrounding_coverage,
-                "max_surrounding_point": max_surrounding_rain,
-                "center_72h": center_72h,
-                "center_72h_coverage_complete": coverage_72h,
-            },
-            "grid_complete": complete_grid,
-            "errors": errors,
-            "data_source": endpoint,
+            "claimed_window": {"start": w.start.isoformat(), "end": w.end.isoformat()},
+            "observed_until": observed_until.astimezone(tz).isoformat(),
+            "centre": {"lat": lat, "lon": lon, "window_mm": a, "day_mm": day[0][0]},
+            "grid": grid,
+            "grid_max_mm": b,
+            "prior_72h_mm": c,
+            "hourly_centre": hourly_centre,
+            "coverage": {"window": a_ok, "grid": b_ok, "prior_72h": c_ok},
+            "data_source": source,
+            "thresholds": {"dry_point_mm": config.WEATHER_DRY_POINT_MM, "dry_72h_mm": config.WEATHER_DRY_72H_MM,
+                           "wet_point_mm": config.WEATHER_WET_POINT_MM, "wet_72h_mm": config.WEATHER_WET_72H_MM},
         }
-
-        status = "inconclusive"
-        reliability = "low"
-
-        title = "Rainfall evidence inconclusive"
-
-        summary = (
-            "Weather data was retrieved, but it is insufficient "
-            "to confirm or contradict the claimed rainfall event."
-        )
-
-        dry_threshold = config.WEATHER_DRY_POINT_MM
-        dry_72h_threshold = config.WEATHER_DRY_72H_MM
-        wet_threshold = config.WEATHER_WET_POINT_MM
-        wet_72h_threshold = config.WEATHER_WET_72H_MM
-
-        # -----------------------------------------------------
-        # Evidence supporting significant rainfall
-        # -----------------------------------------------------
-
-        if center_coverage and coverage_72h:
-
-            if (
-                center_rain >= wet_threshold
-                or center_72h >= wet_72h_threshold
-            ):
-                status = "consistent"
-                reliability = "medium"
-
-                title = "Rainfall evidence supports the claim"
-
-                summary = (
-                    "Rainfall measurements indicate significant precipitation "
-                    "at or near the claimed location."
-                )
-
-            # -------------------------------------------------
-            # Evidence contradicting a rainfall/flood claim
-            # -------------------------------------------------
-
-            elif (
-                complete_grid
-                and center_rain < dry_threshold
-                and max_surrounding_rain is not None
-                and max_surrounding_rain < dry_threshold
-                and center_72h < dry_72h_threshold
-            ):
-                status = "contradiction"
-                reliability = "medium"
-
-                title = "Weather data contradicts the rainfall claim"
-
-                summary = (
-                    "Rainfall was very low at the claimed location, "
-                    "surrounding grid points, and over the preceding 72 hours."
-                )
-
-        limitations = [
-            "Weather data is gridded and may not represent rainfall at the exact location.",
-            "Rainfall estimates are supporting evidence, not ground truth.",
-            "Flooding may occur without rain at the claimed location.",
-            "Localized rainfall may be missed by the grid.",
+        evidence = [
+            {"kind": "api", "ref": full_url, "label": "Open-Meteo hourly precipitation (5 grid points)"},
+            {"kind": "artifact", "ref": ctx.artifact_ref("weather_grid.json"), "label": "All 5 grid readings"},
         ]
 
-        if not center_coverage:
-            limitations.append(
-                "The claimed time-window rainfall data has incomplete coverage."
-            )
+        when = describe_window(w, current.year)   # show the year only when it isn't this year
+        numbers = (f"{a:.1f} mm at the claimed location {when}; "
+                   f"{min(grid_vals):.1f}–{b:.1f} mm across 4 surrounding points; "
+                   f"{c:.1f} mm over the preceding 72 h.")
 
-        if not coverage_72h:
-            limitations.append(
-                "The 72-hour rainfall data has incomplete coverage."
-            )
+        limitations = list(BASE_LIMITATIONS)
+        if w.end > observed_until:
+            limitations.append("Part of the claimed time is after the media was shared (or still in the future), "
+                               "so recorded weather cannot cover it; forecasts are never used as evidence")
+        elif not (a_ok and c_ok and b_ok):
+            limitations.append("Rainfall records are incomplete for part of the claimed time or the 72 h before it")
+        if source == "stale_cache":
+            limitations.append("Offline: an older cached copy of the weather data was used")
 
-        if not complete_grid:
-            limitations.append(
-                "Not all surrounding grid points returned complete rainfall data."
-            )
-
-        if errors:
-            limitations.append(
-                "One or more weather API requests failed."
-            )
-
-        return [
-            self.finding(
-                status=status,
-                reliability=reliability,
-                claim_ids=claim_ids,
-                title=title,
-                summary=summary,
-                details=details,
-                alternatives=ALTERNATIVES,
-                limitations=limitations,
-            )
-        ]
-
-    # =========================================================
-    # Claim helpers
-    # =========================================================
-
-    @staticmethod
-    def _normalized(claim: Any) -> Any:
-        normalized = getattr(claim, "normalized", None)
-
-        if normalized is None and isinstance(claim, dict):
-            normalized = claim.get("normalized", {})
-
-        return normalized or {}
-
-    @staticmethod
-    def _get(obj: Any, key: str) -> Any:
-        if isinstance(obj, dict):
-            return obj.get(key)
-
-        return getattr(obj, key, None)
-
-    @staticmethod
-    def _claim_id(claim: Any) -> str | None:
-        if isinstance(claim, dict):
-            return claim.get("id")
-
-        return getattr(claim, "id", None)
-
-    @staticmethod
-    def _parse_datetime(value: Any) -> datetime:
-        if isinstance(value, datetime):
-            return value
-
-        if value is None:
-            raise ValueError("Missing datetime value.")
-
-        return datetime.fromisoformat(
-            str(value).replace("Z", "+00:00")
-        )
-
-    @classmethod
-    def _claim_window(
-        cls,
-        claimed_date: Any,
-        claimed_start: Any,
-        claimed_end: Any,
-    ) -> tuple[datetime, datetime]:
-
-        if claimed_start and claimed_end:
-            start_dt = cls._parse_datetime(claimed_start)
-            end_dt = cls._parse_datetime(claimed_end)
-
-        elif claimed_date:
-            if isinstance(claimed_date, date):
-                date_obj = claimed_date
-            else:
-                date_obj = date.fromisoformat(
-                    str(claimed_date)[:10]
-                )
-
-            start_dt = datetime.combine(
-                date_obj,
-                datetime.min.time(),
-            )
-
-            end_dt = datetime.combine(
-                date_obj,
-                datetime.max.time().replace(microsecond=0),
-            )
-
+        # Rules (§6.3). Only rain / flood claims can be supported or contradicted.
+        noun = RAIN_CONDITIONS.get(condition)
+        if noun is None:
+            status, reliability = "inconclusive", "low"
+            title = f"Rainfall shown for reference; {condition.replace('_', ' ')} claims are not judged"
+            summary = (f"{numbers} This witness only judges rain and flood claims, so for a "
+                       f"{condition.replace('_', ' ')} claim these numbers are context, not evidence either way.")
+        elif (a_ok and a >= config.WEATHER_WET_POINT_MM) or (c_ok and c >= config.WEATHER_WET_72H_MM):
+            status, reliability = "consistent", "medium"
+            title = f"Recorded rainfall is consistent with the stated {noun}"
+            summary = numbers
+        elif (a_ok and b_ok and c_ok and a < config.WEATHER_DRY_POINT_MM and b < config.WEATHER_DRY_POINT_MM
+              and c < config.WEATHER_DRY_72H_MM):
+            status, reliability = "contradiction", "medium"
+            title = f"Recorded rainfall does not support the stated {noun}"
+            summary = numbers
         else:
-            raise ValueError("Missing claimed date or time window.")
-
-        if end_dt < start_dt:
-            raise ValueError("Claimed end time is before start time.")
-
-        return start_dt, end_dt
-
-    # =========================================================
-    # Weather API + cache
-    # =========================================================
-
-    @staticmethod
-    def _cached_request(
-        endpoint: str,
-        params: dict[str, Any],
-    ) -> dict[str, Any]:
-
-        cache_dir = Path(config.CACHE_DIR)
-        cache_dir.mkdir(parents=True, exist_ok=True)
-
-        cache_key = hashlib.sha256(
-            (
-                endpoint
-                + json.dumps(
-                    params,
-                    sort_keys=True,
-                    separators=(",", ":"),
-                )
-            ).encode("utf-8")
-        ).hexdigest()
-
-        cache_file = cache_dir / f"weather_{cache_key}.json"
-
-        if cache_file.exists():
-            try:
-                return json.loads(
-                    cache_file.read_text(encoding="utf-8")
-                )
-
-            except (OSError, json.JSONDecodeError):
-                logger.warning(
-                    "Weather cache file is invalid: %s",
-                    cache_file,
-                )
-
-        response = requests.get(
-            endpoint,
-            params=params,
-            timeout=30,
-        )
-
-        response.raise_for_status()
-
-        data = response.json()
-
-        cache_file.write_text(
-            json.dumps(data, indent=2),
-            encoding="utf-8",
-        )
-
-        return data
-
-    # =========================================================
-    # Rainfall calculations
-    # =========================================================
-
-    @staticmethod
-    def _to_claim_timezone(
-        timestamp: str,
-        claim_timezone: Any,
-    ) -> datetime:
-
-        parsed = datetime.fromisoformat(
-            timestamp.replace("Z", "+00:00")
-        )
-
-        if parsed.tzinfo is None:
-            if claim_timezone is not None:
-                parsed = parsed.replace(
-                    tzinfo=claim_timezone
-                )
+            status, reliability = "inconclusive", "low"
+            if w.end > observed_until:
+                title = "Recorded rainfall does not cover the claimed time"
+                summary = (f"{numbers} The claimed time runs past when the media was shared, so only the hours "
+                           f"already recorded are counted and no conclusion is drawn.")
             else:
-                parsed = parsed.astimezone()
+                title = f"Recorded rainfall neither supports nor contradicts the stated {noun}"
+                summary = numbers
 
-        elif claim_timezone is not None:
-            parsed = parsed.astimezone(
-                claim_timezone
-            )
-
-        return parsed
-
-    @classmethod
-    def _sum_hourly(
-        cls,
-        data: dict[str, Any],
-        start: datetime,
-        end: datetime,
-    ) -> tuple[float, bool]:
-
-        hourly = data.get("hourly", {})
-
-        times = hourly.get("time", [])
-        precipitation = hourly.get("precipitation", [])
-
-        if not times or not precipitation:
-            return 0.0, False
-
-        claim_timezone = start.tzinfo
-
-        rainfall = 0.0
-        count = 0
-
-        for timestamp, value in zip(
-            times,
-            precipitation,
-        ):
-            try:
-                weather_time = cls._to_claim_timezone(
-                    timestamp,
-                    claim_timezone,
-                )
-
-            except (ValueError, TypeError):
-                continue
-
-            if start <= weather_time <= end:
-                if value is not None:
-                    rainfall += float(value)
-                    count += 1
-
-        expected_hours = int(
-            (end - start).total_seconds() // 3600
-        ) + 1
-
-        coverage = count >= expected_hours
-
-        return round(rainfall, 2), coverage
-
-    @classmethod
-    def _sum_72h(
-        cls,
-        data: dict[str, Any],
-        end: datetime,
-    ) -> tuple[float, bool]:
-
-        start = end - timedelta(hours=72)
-
-        return cls._sum_hourly(
-            data,
-            start,
-            end,
-        )
+        return [self.finding(status=status, reliability=reliability, title=title, summary=summary,
+                             claim_ids=claim_ids, details=details, evidence=evidence,
+                             alternatives=ALTERNATIVES, limitations=limitations)]
 
 
 if __name__ == "__main__":

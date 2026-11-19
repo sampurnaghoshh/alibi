@@ -57,14 +57,15 @@ def test_end_to_end_with_stubs():
     # Chain of custody, in order.
     events = [h.event for h in inv.history]
     assert events[0] == "file_received" and events[1] == "claims_extracted"
-    assert events.count("witness_completed") == 6
-    assert events[-1] == "assessment_computed"
+    assert events.count("witness_started") == 6 and events.count("witness_completed") == 6
+    assert events[-2:] == ["assessment_computed", "graph_ready"]   # "done" is logged after saving
 
     # Saved run can be fetched back, listed and reported.
     assert client.get(f"/api/investigations/{inv.id}").json() == r.json()
     rows = client.get("/api/investigations").json()
     assert [row["id"] for row in rows] == [inv.id]
-    assert set(rows[0]) == {"id", "created_at", "caption", "inputs", "headline", "headline_text", "counts", "human_review"}
+    assert set(rows[0]) == {"id", "created_at", "parent_id", "caption", "inputs", "headline", "headline_text",
+                            "counts", "human_review"}
     rep = client.get(f"/api/investigations/{inv.id}/report")
     assert rep.status_code == 200 and "Human review required" in rep.text
 
