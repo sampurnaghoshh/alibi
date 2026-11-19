@@ -20,6 +20,10 @@ data/runs/*
 data/cache/*
 !data/cache/.gitkeep
 
+# Large phone videos in demo/ (> ~20 MB, CLAUDE.md §12): keep local, share via drive/USB
+demo/**/*.mov
+demo/**/*.MOV
+
 # Editors / OS
 .DS_Store
 Thumbs.db

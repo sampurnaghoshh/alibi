@@ -576,8 +576,8 @@ A live, end-to-end show of the whole system during the pitch, built on the same 
   A finished run replays its whole log. The saved `Investigation.history` keeps only `{ts, event, detail}` and ends at `graph_ready`, because `done` is logged after saving.
 - **`POST /api/investigations/{id}/rerun`**, JSON `{caption, posted_at?}` (also `?async=true`). It creates a **new** investigation with `parent_id` = id:
   - The originals are copied, and each SHA-256 is checked first; a mismatch returns 409.
-  - Claims are re-extracted, and the caption-dependent witnesses run again (`config.RERUN_CAPTION_DEPENDENT`: metadata, weather, prior_appearance).
-  - The caption-independent findings are re-used (`config.RERUN_REUSED`: ela, lipsync, enf), together with their artifacts. Each gets a limitation saying it was re-used. Its claim links are kept only where the new caption makes the same claim.
+  - Claims are re-extracted, and the caption-dependent witnesses run again (`config.RERUN_CAPTION_DEPENDENT`: metadata, weather, prior_appearance, enf). ENF runs again because its verdict uses the claimed country (50 vs 60 Hz).
+  - The caption-independent findings are re-used (`config.RERUN_REUSED`: ela, lipsync), together with their artifacts. Each gets a limitation saying it was re-used. Its claim links are kept only where the new caption makes the same claim.
   - Unknown id → 404. A parent that's still running or failed → 409. An empty caption → 422.
 - **`GET /api/live/feed`** (server-sent events) announces every new investigation, including re-runs and demo runs:
   - `investigation_started` `{id, created_at, caption, posted_at, inputs[], parent_id}`

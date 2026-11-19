@@ -167,6 +167,9 @@ def test_rerun_reuses_files_and_caption_independent_findings():
     assert any("copied read-only from" in d and "hash verified" in d for d in details)
     assert any(d.startswith("ela:") and "re-used from" in d for d in details)
     assert not any(h.event == "witness_started" and h.detail == "ela" for h in child.history)
+    rerun = {h.detail for h in child.history if h.event == "witness_started"}
+    assert rerun == {"metadata", "weather", "prior_appearance", "enf"}     # ENF depends on the claimed country
+    assert set(config.RERUN_REUSED) == {"ela", "lipsync"}
     assert [f.witness for f in child.findings] == [f["witness"] for f in parent["findings"]]   # display order
     rows = {s["id"]: s for s in client.get("/api/investigations").json()}
     assert rows[child.id]["parent_id"] == parent["id"]

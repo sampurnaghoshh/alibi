@@ -47,8 +47,8 @@ MAX_UPLOAD_BYTES = 200 * 1024 * 1024        # per file
 
 # Live Desk (§14). Caption re-runs (POST /api/investigations/{id}/rerun) repeat the witnesses whose
 # result depends on the caption's claims and re-use the rest from the original run.
-RERUN_CAPTION_DEPENDENT = ("metadata", "weather", "prior_appearance")
-RERUN_REUSED = ("ela", "lipsync", "enf")
+RERUN_CAPTION_DEPENDENT = ("metadata", "weather", "prior_appearance", "enf")   # ENF: verdict uses the claimed country
+RERUN_REUSED = ("ela", "lipsync")
 LIVE_BACKGROUND_WORKERS = 2          # async investigations running at once
 LIVE_SSE_POLL_S = 0.2                # how often the event stream checks history.jsonl for new lines
 LIVE_SSE_KEEPALIVE_S = 15.0

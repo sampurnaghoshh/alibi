@@ -22,19 +22,26 @@ files: demo/case_b/
 expect: lipsync contradiction (medium) with flagged timestamps; metadata editing/encoder hints
 
 ## control_1
-caption: TODO
-posted_at: TODO
-files: demo/controls/
+caption: Sampurna explaining our project at the hackathon in Bengaluru today
+posted_at: 2026-11-19
+files: demo/controls/control_1.MOV
 expect: consistent_so_far or insufficient_evidence, never a contradiction
+note: genuine clip, true caption. The .MOV files are > 20 MB, so they are not in git (§12); copy them in from the team drive.
 
 ## control_2
-caption: TODO
-posted_at: TODO
-files: demo/controls/
+caption: Teammate talking about ALIBI at the hackathon in Bengaluru today
+posted_at: 2026-11-19
+files: demo/controls/control_2.MOV
 expect: consistent_so_far or insufficient_evidence, never a contradiction
 
 ## control_3
-caption: TODO
-posted_at: TODO
-files: demo/controls/
+caption: Inside the hackathon venue in Bengaluru today
+posted_at: 2026-11-19
+files: demo/controls/control_3.MOV
+expect: consistent_so_far or insufficient_evidence, never a contradiction
+
+## control_4
+caption: Outside the venue in Bengaluru this afternoon, clear weather
+posted_at: 2026-11-19
+files: demo/controls/control_4.MOV
 expect: consistent_so_far or insufficient_evidence, never a contradiction
