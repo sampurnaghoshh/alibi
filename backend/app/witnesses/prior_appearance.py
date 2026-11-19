@@ -41,8 +41,8 @@ from pathlib import Path
 from typing import Any, Optional
 
 from app import config
-from app.media import (frame_at, hamming, load_image, media_kind, phash_hex, sample_fps_for, sample_frames,
-                       video_info)
+from app.media import (clip_duration, frame_at, hamming, load_image, media_kind, phash_hex, sample_fps_for,
+                       sample_frames)
 from app.schemas import Claim, Finding
 from app.witnesses.base import InputRef, InvestigationContext, Witness, run_cli
 
@@ -300,8 +300,8 @@ class PriorAppearanceWitness(Witness):
     def _check(self, ctx: InvestigationContext, inp: InputRef, n: int, total: int, archive: dict,
                clips: list[dict]) -> Finding:
         normal_fps = float(archive.get("sample_fps") or config.PRIOR_SAMPLE_FPS)
-        duration = self._duration(inp)
-        fps = sample_fps_for(duration, normal_fps)              # same rule as build_archive.py (4 fps if short)
+        duration = clip_duration(inp.path, inp.mime)            # shared with build_archive.py: same file -> same rate
+        fps = sample_fps_for(duration, normal_fps)              # 4 fps if short
         frames = sample_frames(inp.path, fps, inp.mime)        # media.py defaults: same width as the archive
         times = [t for t, _ in frames]
         hashes = [phash_hex(img) for _, img in frames]
@@ -371,7 +371,7 @@ class PriorAppearanceWitness(Witness):
 
         locations = [] if is_photo else [
             {"kind": "timestamp", "file_id": inp.file_id, "start_s": s, "end_s": e}
-            for s, e in matched_spans(times, best["matched_idx"], 1.0 / fps, duration or inp.duration_s)]
+            for s, e in matched_spans(times, best["matched_idx"], 1.0 / fps, duration)]
         evidence = [{"kind": "archive_match", "ref": clip["clip_id"],
                      "label": f"{clip.get('title', clip['clip_id'])} (verified {clip.get('verified_location')}, "
                               f"{clip.get('verified_date')})"},
@@ -503,17 +503,6 @@ class PriorAppearanceWitness(Witness):
             out["frame_matches"] = []
             limitations.append(f"Matched frames could not be saved for display ({type(exc).__name__})")
         return out
-
-    @staticmethod
-    def _duration(inp: InputRef) -> Optional[float]:
-        """Video duration as build_archive.py measures it (frame count / fps); None for images or if unknown."""
-        if inp.kind != "video":
-            return None
-        try:
-            vfps, count = video_info(inp.path)
-            return round(count / vfps, 3) if count and vfps else inp.duration_s
-        except Exception:  # noqa: BLE001 - unknown duration -> the normal sampling rate
-            return inp.duration_s
 
     def _no_archive(self, why: str, n: int) -> Finding:
         return self.finding(

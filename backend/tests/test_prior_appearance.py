@@ -458,3 +458,103 @@ def test_spans_cover_uneven_sample_gaps():
     # 4 fps sampling of a 5 fps video lands at 0, 0.4, 0.6, 0.8, 1.0 ... : one continuous match, not fragments
     times = [0.0, 0.4, 0.6, 0.8, 1.0, 1.4]
     assert P.matched_spans(times, [0, 1, 2, 3, 4, 5], 0.25, 1.6) == [(0.0, 1.6)]
+
+
+# --- one shared duration helper: builder and witness always pick the same fps -----------------
+
+def _no_duration_mkv(path: Path, seconds: int = 3) -> Path:
+    """Matroska streamed to a pipe: no duration / frame count in the header (OpenCV reports a bogus count)."""
+    import subprocess
+    with open(path, "wb") as fh:
+        subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", f"testsrc2=s=320x180:r=10:d={seconds}",
+                        "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-f", "matroska", "pipe:1"],
+                       stdout=fh, check=True, timeout=60)
+    return path
+
+
+@pytest.mark.skipif(not __import__("shutil").which("ffmpeg"), reason="ffmpeg not on PATH")
+def test_clip_without_duration_metadata_uses_the_same_fps_on_both_sides(tmp_path, monkeypatch):
+    from app.media import clip_duration, phash_hex, sample_fps_for, sample_frames
+    d = tmp_path / "arch"
+    d.mkdir()
+    clip = _no_duration_mkv(d / "nodur.mkv")                                # 3 s, but the file doesn't say so
+    assert clip_duration(clip) is None and sample_fps_for(clip_duration(clip)) == 1.0
+    (d / "manifest.json").write_text(json.dumps([{
+        "clip_id": "nodur", "file": "nodur.mkv", "title": "No duration", "verified_date": "2026-11-18",
+        "verified_by": "Team member", "source_note": "Streamed container", **CHENNAI}]), encoding="utf-8")
+    out = d / "archive.json"
+    assert build_archive.main(["--manifest", str(d / "manifest.json"), "--out", str(out)]) == 0
+    (entry,) = json.loads(out.read_text(encoding="utf-8"))["clips"]
+    assert entry["sample_fps"] == 1.0 and entry["duration_s"] is None     # no bogus negative duration
+    monkeypatch.setattr(config, "ARCHIVE_JSON", out)
+    up = tmp_path / "upload.mkv"
+    up.write_bytes(clip.read_bytes())
+    # The upload's stored duration (ffprobe/storage) may say 3 s; the witness must NOT switch to 4 fps on that.
+    inp = InputRef(file_id="in_1", name=up.name, mime="video/x-matroska", size=1, sha256="0" * 64, path=up, duration_s=3.0)
+    ctx = InvestigationContext(inv_id="test", caption="Flooding in Chennai yesterday", posted_at=POSTED, inputs=[inp],
+                               claims=extract_claims("Flooding in Chennai yesterday", POSTED), artifacts_dir=tmp_path / "art")
+    (f,) = run_witnesses(ctx, [P.PriorAppearanceWitness()])
+    assert f.details["sample_fps"] == entry["sample_fps"] == 1.0 and f.details["upload_duration_s"] is None
+    assert [phash_hex(i) for _, i in sample_frames(up, f.details["sample_fps"])] == entry["frame_hashes"]
+    assert f.details["median_hamming"] == 0 and (f.status, f.reliability) == ("consistent", "high")
+
+
+def test_zero_frame_count_or_unreadable_video_has_unknown_duration(tmp_path, make_video, monkeypatch):
+    from app import media
+    clip = _video(make_video, tmp_path / "short.mp4", [1, 2, 3])
+    assert media.clip_duration(clip) == pytest.approx(3.0, abs=0.2)
+    monkeypatch.setattr(media, "video_info", lambda path: (30.0, 0))        # container reports 0 frames
+    assert media.clip_duration(clip) is None and media.sample_fps_for(media.clip_duration(clip)) == 1.0
+    def boom(path):
+        raise RuntimeError("cannot open video")
+    monkeypatch.setattr(media, "video_info", boom)
+    assert media.clip_duration(clip) is None
+    assert media.clip_duration(tmp_path / "x.jpg") is None                 # images: no duration
+
+
+# --- static scene: every frame hashes alike, Time Machine pairs must still line up ------------
+
+def test_static_scene_time_machine_pairs_line_up_from_start_middle_end(tmp_path, make_video, monkeypatch):
+    d = tmp_path / "arch"
+    d.mkdir()
+    still = _scene(77)[:, :, ::-1].copy()
+    make_video(d / "static.mp4", seconds=9, fps=FPS, size=(W, H), frame_fn=lambda i: still)   # 9 s -> 4 fps, 36 frames
+    (d / "manifest.json").write_text(json.dumps([{
+        "clip_id": "static", "file": "static.mp4", "title": "Static scene", "verified_date": "2024-07-25",
+        "verified_by": "Team member", "source_note": "Tripod shot", **CHENNAI}]), encoding="utf-8")
+    out = d / "archive.json"
+    assert build_archive.main(["--manifest", str(d / "manifest.json"), "--out", str(out)]) == 0
+    hashes = json.loads(out.read_text(encoding="utf-8"))["clips"][0]["frame_hashes"]
+    assert len(hashes) == 36 and len(set(hashes)) == 1                    # truly static: one hash for every frame
+    monkeypatch.setattr(config, "ARCHIVE_JSON", out)
+    up = tmp_path / "reshared.mp4"
+    up.write_bytes((d / "static.mp4").read_bytes())
+    f = _run(tmp_path, up, "Massive flooding in Chennai yesterday evening")
+    pairs = f.details["frame_matches"]
+    assert len(pairs) == 3
+    for p in pairs:
+        assert p["upload_s"] == pytest.approx(p["archive_s"], abs=0.01)    # same moment, not "all vs archive frame 0"
+    duration = f.details["upload_duration_s"]
+    assert [min(int(3 * p["upload_s"] / duration), 2) for p in pairs] == [0, 1, 2]   # start / middle / end
+
+
+def test_zero_frame_count_builder_and_witness_agree_end_to_end(tmp_path, make_video, monkeypatch):
+    """Sam's case: OpenCV reports 0 frames. The builder used to fall back to 1 fps while the witness fell back to the
+    stored (ffprobe) duration of 3 s and picked 4 fps. Now both use media.clip_duration -> unknown -> 1 fps."""
+    from app import media
+    d = tmp_path / "arch"
+    d.mkdir()
+    _video(make_video, d / "short.mp4", [5, 6, 7])
+    monkeypatch.setattr(media, "video_info", lambda path: (10.0, 0))       # both sides see a 0 frame count
+    (d / "manifest.json").write_text(json.dumps([{
+        "clip_id": "zero", "file": "short.mp4", "title": "Zero count", "verified_date": "2026-11-18",
+        "verified_by": "Team member", "source_note": "Own recording", **CHENNAI}]), encoding="utf-8")
+    out = d / "archive.json"
+    assert build_archive.main(["--manifest", str(d / "manifest.json"), "--out", str(out)]) == 0
+    (entry,) = json.loads(out.read_text(encoding="utf-8"))["clips"]
+    monkeypatch.setattr(config, "ARCHIVE_JSON", out)
+    up = tmp_path / "upload.mp4"
+    up.write_bytes((d / "short.mp4").read_bytes())
+    f = _run(tmp_path, up, "Flooding in Chennai yesterday")                # InputRef.duration_s = 6.0 (< 10 s)
+    assert f.details["sample_fps"] == entry["sample_fps"] == 1.0
+    assert f.details["matched_frames"] == len(entry["frame_hashes"]) and f.details["median_hamming"] == 0
