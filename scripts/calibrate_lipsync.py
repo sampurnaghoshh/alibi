@@ -17,6 +17,7 @@ corr at the clip's lag) and <out>/calibration.json with all numbers.
 Run (from the repo root):
     backend\\.venv\\Scripts\\python.exe scripts\\calibrate_lipsync.py --genuine C:\\Users\\mnoom\\alibi-media\\enf --swapped C:\\Users\\mnoom\\alibi-media\\enf\\swapped
     ... --fps 15        (try another analysis fps for one run, without editing config.py)
+    ... --take 0:5      (only the first 5 genuine clips, sorted by name: e.g. a calibration/test split)
 """
 
 from __future__ import annotations
@@ -187,9 +188,12 @@ def main() -> int:
     ap.add_argument("--out", type=Path, default=None, help="plots folder (default <genuine>/lipsync_calibration)")
     ap.add_argument("--fps", type=float, default=None,
                     help="try another analysis fps for this run only (config.LIPSYNC_ANALYSIS_FPS is not changed)")
+    ap.add_argument("--take", default=None,
+                    help="slice of the sorted GENUINE clips, e.g. 0:5 (calibration set) or 5:10 (held-out test set)")
     args = ap.parse_args()
     if args.fps:
         config.LIPSYNC_ANALYSIS_FPS = args.fps   # in-process only, to compare before changing config.py
+    take = slice(*(int(x) if x else None for x in args.take.split(":"))) if args.take else slice(None)
 
     groups = [("genuine", args.genuine)] + ([("swapped", args.swapped)] if args.swapped else [])
     out = args.out or args.genuine / "lipsync_calibration"
@@ -208,6 +212,8 @@ def main() -> int:
     rows = []
     for group, folder in groups:
         clips = sorted(p for p in folder.iterdir() if p.is_file() and p.suffix.lower() in VIDEO_EXTS)
+        if group == "genuine":
+            clips = clips[take]
         for clip in clips:
             t0 = time.perf_counter()
             try:

@@ -161,6 +161,11 @@ LIPSYNC_MAX_RELIABILITY = "low"
 # Genuine/swapped didn't separate in calibration on 5+5 clips, so pending Sampurna's decision. While False,
 # lip-sync is ALWAYS inconclusive (low) until recalibration: any rule result (contradiction OR consistent) is
 # reported as inconclusive, with the raw lag/corr/prominence and the rule outcome in details.
+# Recalibration 2026-11-19 (1080p close-ups, faceH 28-38%; 5 calibration + 5 held-out test clips, 5 swaps each,
+# scripts/calibrate_lipsync_thresholds.py): velocity corr < 0.1485 / prominence < 0.0945 was 0 genuine / 3 of 5
+# swaps on calibration but FAILED the held-out test (1 genuine contradiction). Aperture prominence < 0.12 held
+# (0 genuine on both sets) but caught only 1 of 5 swaps on each. |lag| unusable (genuine reached the 0.3 s edge).
+# Decision: flag stays False, reliability stays capped at low, no threshold changes.
 LIPSYNC_ALLOW_CONTRADICTION = False
 LIPSYNC_MIN_FACE_HEIGHT = 0.25       # STARTING VALUE: median face height (forehead-chin) / frame height below
                                      # this -> inconclusive/low "face too small for a reliable synchrony measurement"
