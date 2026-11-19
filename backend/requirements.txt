@@ -1,4 +1,4 @@
-# ALIBI backend, Python 3.11
+# ALIBI backend, Python 3.12
 # System tools also required on PATH: ffmpeg (ffprobe), exiftool
 
 # API
@@ -26,7 +26,7 @@ numpy>=1.26
 
 # Optional runtime LLM providers (claim extraction + explanations only)
 anthropic>=0.40
-google-generativeai>=0.8
+google-genai>=1.0
 
 # Tests
 pytest>=8.0

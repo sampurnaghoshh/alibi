@@ -50,7 +50,7 @@ ALIBI treats each kind of evidence (caption text, metadata, weather records, ear
 | Person | AI tools | Owns | Files |
 |---|---|---|---|
 | **Sampurna** (lead) | Claude Code (Opus) in VS Code | Repo skeleton, **evidence contract**, **rule engine**, graph builder, FastAPI app, storage, report, integration, final merges | `backend/app/main.py`, `schemas.py`, `engine/*`, `storage.py`, `report.py`, `shared/*` |
-| **Nooman** | Claude Code (Opus) in VS Code | **Claim extraction** (LLM + rule fallback), **lip-sync witness**, **ENF audio witness** (conditional), calibration scripts | `backend/app/claims/*`, `witnesses/lipsync.py`, `witnesses/enf.py`, `scripts/calibrate_*.py` |
+| **Nooman** | Claude Code (Opus) in VS Code | **Claim extraction** (LLM + rule fallback), **lip-sync witness**, **ENF audio witness** (conditional), calibration scripts | `backend/app/claims/*`, `witnesses/lipsync.py`, `witnesses/enf.py`, `scripts/calibrate_*.py`, `scripts/test_enf.py` |
 | **Adithi** | Free LLMs | **Metadata witness**, **weather witness**, **prior-appearance witness**, ELA (only if time), archive builder | `witnesses/metadata.py`, `witnesses/weather.py`, `witnesses/prior_appearance.py`, `witnesses/ela.py`, `scripts/build_archive.py` |
 | **Dhruva** | Free LLMs | **Entire frontend**: upload page, investigation dashboard, contradiction graph, witness cards, evidence drawer, report view, demo polish | `frontend/*` |
 
@@ -93,7 +93,8 @@ Witness → family (fixed):
   "extracted_by": "llm"
 }
 ```
-- `normalized` for `time`: `{ "date": "2026-11-18", "start": "...ISO...", "end": "...ISO...", "precision": "day" }`. Relative dates ("yesterday") resolve against `posted_at`.
+- `normalized` for `time`: `{ "date": "2026-11-18", "start": "...ISO...", "end": "...ISO...", "precision": "day" }`. Relative dates ("yesterday") resolve against `posted_at`. `start`/`end` must include a timezone offset.
+  - `precision` is one of `hour | part_of_day | day | week | month | year`. Use `part_of_day` for "evening" / "morning" / "night" windows (e.g. "yesterday evening" → `start` 17:00, `end` 21:00, `precision: "part_of_day"`).
 - `normalized` for `weather_condition`/`event`: `{ "condition": "flood" }` from the set `flood | heavy_rain | rain | dry | storm | other`.
 - `extracted_by`: `"llm" | "rules"`.
 
@@ -137,7 +138,7 @@ Witness → family (fixed):
   "posted_at": "ISO (user-supplied 'when was this shared', default now)",
   "caption": "Massive flooding in Chennai yesterday evening, roads completely underwater",
   "inputs": [
-    { "file_id": "in_1", "name": "clip.mp4", "mime": "video/mp4", "size": 4821000, "sha256": "…", "duration_s": 14.2 }
+    { "file_id": "in_1", "name": "clip.mp4", "mime": "video/mp4", "size": 4821000, "sha256": "…", "duration_s": 14.2, "stored_path": "originals/in_1_clip.mp4" }
   ],
   "claims": [ "...Claim[]..." ],
   "findings": [ "...Finding[]..." ],
@@ -162,6 +163,15 @@ Witness → family (fixed):
 - Node: `{ "id": "c1", "type": "claim" | "witness" | "input", "label": "Chennai", "status": "consistent|contradiction|…|null", "meta": {} }`
 - Edge: `{ "id": "e1", "source": "f_weather_1", "target": "c1", "relation": "supports" | "contradicts" | "inconclusive" | "derived_from" }`
 - Inputs → claims use `derived_from`. Findings → claims use the relation that matches the finding status.
+
+### 4.6 Input fields and validation rules (enforced by `schemas.py`)
+- `inputs[].stored_path`: path of the read-only original, relative to the run folder. The frontend plays/shows files from `/api/files/{inv_id}/{stored_path}`. `duration_s` is `null` for images.
+- Unknown fields are rejected everywhere except inside `details`, graph `meta`, and location `normalized`.
+- `alternatives` and `limitations` must be non-empty.
+- `family` must match the witness (§4.1), and `reliability` may not exceed the witness's max in §5.
+- Each claim's `source.text` must equal `caption[start:end]`.
+- `claim_ids`, location `file_id`s, `weak_indicators` and graph edges must point at things that exist, and `assessment.counts` must match the findings.
+- After changing `schemas.py`, regenerate the JSON Schema: `cd backend; python -m app.schemas`. `pytest` fails if it is stale.
 
 ---
 
@@ -330,7 +340,7 @@ alibi/
 └── demo/                        # case_a/, case_b/, controls/ + captions.md
 ```
 
-**Backend:** Python 3.11, FastAPI, uvicorn, pydantic v2, opencv-python, imagehash, Pillow, librosa, soundfile, scipy, numpy, mediapipe, requests, dateparser, python-multipart. System tools: `ffmpeg`, `exiftool`.
+**Backend:** Python 3.12 (`py -3.12` on Windows), FastAPI, uvicorn, pydantic v2, opencv-python, imagehash, Pillow, librosa, soundfile, scipy, numpy, mediapipe, requests, dateparser, python-multipart. System tools: `ffmpeg`, `exiftool`.
 
 **Frontend:** Next.js + TypeScript + Tailwind, `@xyflow/react` (graph), `recharts` (lip-sync and weather charts), `wavesurfer.js` (audio + spectrogram), `react-leaflet` (weather grid map), `framer-motion` (staggered reveal).
 
@@ -347,9 +357,12 @@ alibi/
 Synchronous is fine for the demo (target < 20 s for a 15 s clip). The frontend **reveals findings one by one** with a staggered animation for the demo effect.
 
 ### Run commands
-```bash
+Windows / PowerShell (see README.md for full setup). macOS/Linux: use `python3.12 -m venv .venv` and `source .venv/bin/activate`.
+```powershell
 # backend
-cd backend && python -m venv .venv && source .venv/bin/activate
+cd backend
+py -3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 pytest -q

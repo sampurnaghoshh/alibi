@@ -8,7 +8,7 @@ Full spec, contract and ownership: [CLAUDE.md](CLAUDE.md).
 
 ## Prerequisites (Windows)
 
-- Python 3.11 (`py -3.11 --version`)
+- Python 3.12 (`py -3.12 --version`)
 - Node 24 (`node --version`)
 - `ffmpeg` / `ffprobe` and `exiftool` on PATH:
   ```powershell
@@ -21,7 +21,7 @@ Full spec, contract and ownership: [CLAUDE.md](CLAUDE.md).
 
 ```powershell
 cd backend
-py -3.11 -m venv .venv
+py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 Copy-Item .env.example .env      # then edit if you have an LLM key
