@@ -286,7 +286,13 @@ ENF_MIXED_GRID_COUNTRIES = ("JP", "BR")   # both 50 and 60 Hz in use: never a co
 # =============================================================================
 
 # Metadata integrity (§6.2)
-METADATA_MAX_DATE_DIFF_DAYS = 2      # capture date vs claimed date
+# Capture time vs the claim's [start, end] window (calibrated on the team's genuine clips):
+#   time zone known (offset in the file, or QuickTime UTC): within the window +/- this many hours
+#   is consistent, further outside is a contradiction (medium).
+METADATA_TIME_MARGIN_HOURS = 12
+#   time zone unknown (no offset): outside the window but within this many days is inconclusive,
+#   further outside is a contradiction (medium).
+METADATA_MAX_DATE_DIFF_DAYS = 2
 METADATA_MAX_GPS_DIST_KM = 50.0      # GPS vs claimed location
 METADATA_EDITING_SOFTWARE = [
     "photoshop", "lightroom", "snapseed", "capcut", "picsart", "facetune",

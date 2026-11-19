@@ -253,7 +253,11 @@ All thresholds below are **starting values. Calibrate them on genuine clips** an
 - Tools: `exiftool -json -G` (subprocess) for images and video; `ffprobe -v quiet -print_format json -show_format -show_streams` for video/audio.
 - Report: fields present/missing (CreateDate, GPS, Make/Model, Software, encoder), editing-software tags (Photoshop, Snapseed, CapCut, etc.), re-encode hints (WhatsApp-style names, missing camera fields, `encoder=Lavf`).
 - Rules:
-  - Capture date present **and** differs from the claimed date by > 2 days → `contradiction` (medium).
+  - **Capture time** (done; finished by Sampurna with Adithi's agreement, Adithi stays the owner). It's compared as a full datetime against the claim's `[start, end]` (week/month claims use the whole window):
+    - Source, best first: `Keys:CreationDate` (local time + offset) → image `DateTimeOriginal` + `OffsetTimeOriginal` → `QuickTime:CreateDate` (UTC by the QuickTime spec) → ffprobe `creation_time` (UTC) → any date without an offset.
+    - Time zone known: inside the window ±`METADATA_TIME_MARGIN_HOURS` (12) → `consistent` (low); further outside → `contradiction` (medium).
+    - Time zone unknown: inside the window → `consistent` (low); outside but within `METADATA_MAX_DATE_DIFF_DAYS` (2) → `inconclusive`; further → `contradiction` (medium).
+    - `details.files[]` has each file's `date_status` / `gps_status`, `capture_time`, `capture_source`, `fields_present`, `fields_missing`, `make`, `model`, `reencode_hints`. exiftool runs as `-n -G1` (signed GPS, Composite tags preferred); `"exiftool not found"` is a limitation whenever it's missing.
   - GPS present **and** > 50 km from the claimed location → `contradiction` (medium).
   - Present and matching → `consistent` (low; metadata is easy to edit).
   - Missing → `inconclusive` with alternative "metadata is commonly stripped by messaging apps and social platforms".
