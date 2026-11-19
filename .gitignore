@@ -19,6 +19,8 @@ data/runs/*
 !data/runs/.gitkeep
 data/cache/*
 !data/cache/.gitkeep
+data/bot_chats.json
+data/bot_chats.tmp
 
 # Large phone videos in demo/ (> ~20 MB, CLAUDE.md §12): keep local, share via drive/USB
 demo/**/*.mov

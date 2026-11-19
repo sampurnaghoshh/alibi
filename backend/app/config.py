@@ -54,6 +54,26 @@ LIVE_SSE_POLL_S = 0.2                # how often the event stream checks history
 LIVE_SSE_KEEPALIVE_S = 15.0
 LIVE_SSE_MAX_S = 600.0               # an event stream closes after this long
 
+# Telegram bot (§14 step 2, app/bot/). All secrets come from backend/.env; never log the token.
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+TELEGRAM_ALLOWED_CHAT_IDS = {
+    int(x) for x in os.getenv("TELEGRAM_ALLOWED_CHAT_IDS", "").replace(" ", "").split(",") if x.lstrip("-").isdigit()
+}
+TELEGRAM_PASSCODE = os.getenv("TELEGRAM_PASSCODE", "").strip()      # "/start <passcode>" approves a chat
+TELEGRAM_API_BASE = os.getenv("TELEGRAM_API_BASE", "https://api.telegram.org").rstrip("/")
+TELEGRAM_MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024    # Bot API getFile limit
+TELEGRAM_POLL_TIMEOUT_S = 30                       # long polling
+BOT_WORKERS = 4                                    # messages handled at once
+BOT_STATE_FILE = DATA_DIR / "bot_chats.json"       # approved chats + which message belongs to which run (gitignored)
+# 127.0.0.1 rather than "localhost": on Windows, "localhost" tries IPv6 ::1 first and every new
+# connection to uvicorn (which listens on 127.0.0.1) waits ~2 s before falling back.
+ALIBI_API_URL = os.getenv("ALIBI_API_URL", "http://127.0.0.1:8000").rstrip("/")
+# Optional: the bot's @username for the Live Desk idle screen. Empty = ask Telegram (getMe) once and cache it.
+TELEGRAM_BOT_USERNAME = os.getenv("TELEGRAM_BOT_USERNAME", "").strip().lstrip("@")
+
+# Live Desk page (§14 step 3): standalone HTML/CSS/JS served at GET /live, libraries vendored (offline).
+LIVE_STATIC_DIR = BACKEND_DIR / "app" / "live" / "static"
+
 # Demo presets (POST /api/demo/{case}): cases are read from this file; file paths in it are
 # relative to the repo root and must stay inside demo/.
 DEMO_CAPTIONS = REPO_ROOT / "demo" / "captions.md"
@@ -125,11 +145,16 @@ WEATHER_FORECAST_CACHE_TTL_S = 3600  # refresh cached forecast data after ~1 h w
 
 # Archive builder (§6.4, scripts/build_archive.py, taken over from Adithi).
 # Hand-edited list of verified clips; the builder adds frame hashes and writes ARCHIVE_JSON.
-# Sampling must match the prior_appearance witness: both use app/media.py with PRIOR_SAMPLE_FPS.
+# Sampling must match the prior_appearance witness: both use app/media.py with sample_fps_for(duration).
 ARCHIVE_MANIFEST = DATA_DIR / "archive" / "manifest.json"
 # Sampled frames are shrunk to this width before hashing (pHash only looks at 32x32 anyway).
 # Changing it changes every hash: rebuild data/archive/archive.json afterwards.
 FRAME_SAMPLE_MAX_WIDTH = 640
+# Short clips are sampled more densely (media.sample_fps_for, used by BOTH build_archive.py and prior_appearance):
+# a 2.9 s clip gives 3 frames at 1 fps (one frame decides a match) but 12 at 4 fps. Approved by Sampurna.
+# Changing these changes which frames are hashed: rebuild data/archive/archive.json afterwards.
+SHORT_CLIP_S = 10.0                  # clips shorter than this ...
+SHORT_CLIP_FPS = 4.0                 # ... are sampled at 4 frames/s instead of PRIOR_SAMPLE_FPS
 
 # Runtime LLM (claim extraction + explanations only; never decides truth)
 LLM_PROVIDER = os.getenv("ALIBI_LLM_PROVIDER", "none").strip().lower()   # anthropic | gemini | none
@@ -193,16 +218,26 @@ LIPSYNC_MAX_RELIABILITY = "low"
 # Genuine/swapped didn't separate in calibration on 5+5 clips, so pending Sampurna's decision. While False,
 # lip-sync is ALWAYS inconclusive (low) until recalibration: any rule result (contradiction OR consistent) is
 # reported as inconclusive, with the raw lag/corr/prominence and the rule outcome in details.
+# Recalibration 2026-11-19 (1080p close-ups, faceH 28-38%; 5 calibration + 5 held-out test clips, 5 swaps each,
+# scripts/calibrate_lipsync_thresholds.py): velocity corr < 0.1485 / prominence < 0.0945 was 0 genuine / 3 of 5
+# swaps on calibration but FAILED the held-out test (1 genuine contradiction). Aperture prominence < 0.12 held
+# (0 genuine on both sets) but caught only 1 of 5 swaps on each. |lag| unusable (genuine reached the 0.3 s edge).
+# Decision: flag stays False, reliability stays capped at low, no threshold changes.
 LIPSYNC_ALLOW_CONTRADICTION = False
 LIPSYNC_MIN_FACE_HEIGHT = 0.25       # STARTING VALUE: median face height (forehead-chin) / frame height below
                                      # this -> inconclusive/low "face too small for a reliable synchrony measurement"
+LIPSYNC_FACE_PROBE_S = 3.0           # early exit: no face in any frame of the first 3 s -> stop decoding,
+                                     # not_applicable "no face detected in the opening seconds" (live-demo speed)
+LIPSYNC_MAX_SPAN_S = 12.0            # analyse only the first 12 s (video + audio); measured ~9 s on 4K IMG_5383.
+                                     # A limitation is added whenever this actually cuts the clip. 0/None = whole clip
 LIPSYNC_MAX_INPUTS = 2               # analyse at most 2 videos per investigation (runner limit is 90 s; ~10-35 s each)
 LIPSYNC_MAX_LOCATIONS = 3            # worst windows (lowest corr at the clip lag) reported as timestamps
 LIPSYNC_MIN_FACE_FRACTION = 0.50     # face detected in >= 50% of sampled frames, else not_applicable
 LIPSYNC_SMOOTH_FRAMES = 3            # median filter on mouth aperture
 LIPSYNC_MAX_GAP_FRAMES = 5           # interpolate face dropouts up to 5 frames; longer stay missing
 LIPSYNC_ANALYSIS_FPS = 30.0          # constant analysis rate (iPhone ~29.83 fps VFR); +/-0.3 s = +/-9 frames
-LIPSYNC_FRAME_MAX_SIDE = 960         # downscale 4K before landmarking (1920 tested: same numbers, slower)
+LIPSYNC_FRAME_WIDTH = 640            # ffmpeg scales to 640 px wide while decoding (scale=640:-2, never upscaled);
+                                     # 960 and 1920 gave the same numbers, only slower
 LIPSYNC_MAX_LAG_S = 0.30             # clip-level cross-correlation search range +/-
 LIPSYNC_MIN_SPEECH_S = 2.0           # need >= 2 s of speech frames with a face, else insufficient_signal
 # Audio: speech-band loudness in dB.
@@ -230,7 +265,9 @@ LIPSYNC_CONTRA_MAX_CORR = 0.10       # ... or corr < this ...
 LIPSYNC_CONTRA_MAX_PROMINENCE = -1.0 # ... or prominence < this -> contradiction (placeholder: off until calibrated)
 
 # ENF power-grid hum (§6.6). Conditional on the hour-1 go/no-go test.
-ENF_GO = False                       # set True ONLY if 50/100 Hz was found in >= 3 of 5 venue clips
+ENF_GO = False                       # set True ONLY if 50/100 Hz was found in >= 3 of 5 venue clips.
+                                     # Hour-1 test (scripts/test_enf.py): NO-GO, hum in 0 of 5 iPhone clips ->
+                                     # ENF is display-only: always insufficient_signal (low), never a verdict
 ENF_STFT_WINDOW_S = (4.0, 8.0)       # shorter end for short clips
 ENF_PEAK_HALF_WIDTH_HZ = 0.5         # signal band: f +/- 0.5 Hz
 ENF_NOISE_BAND_HZ = 5.0              # compared against a 5 Hz band around f
@@ -238,6 +275,34 @@ ENF_MIN_SNR_DB = 6.0
 ENF_MIN_FRAME_FRACTION = 0.60        # detected if SNR >= 6 dB in >= 60% of frames
 ENF_FREQS_50HZ = (50.0, 100.0)
 ENF_FREQS_60HZ = (60.0, 120.0)
+ENF_SHORT_CLIP_MIN_WIN_S = 2.0       # STFT window never below 2 s (0.5 Hz bins); shorter audio -> insufficient_signal
+ENF_MAX_SPAN_S = 12.0                # analyse only the first 12 s of audio (speed); limitation added when it cuts
+ENF_MAX_INPUTS = 2                   # analyse at most 2 audio/video inputs per investigation
+# Used only if ENF_GO is True (§6.6): 50/100 Hz + claim in these countries -> consistent; 60/120 Hz + claim in a
+# country NOT on a 60 Hz or mixed grid -> contradiction. ISO 3166-1 alpha-2.
+ENF_CONSISTENT_COUNTRIES = ("IN",)
+ENF_60HZ_COUNTRIES = ("US", "CA", "MX", "KR", "TW", "PH", "SA", "CO", "VE", "PE", "EC", "CR", "PA", "GT",
+                      "HN", "NI", "SV", "DO", "CU", "PR", "BS", "BZ", "LR", "FM", "GU", "AS")
+ENF_MIXED_GRID_COUNTRIES = ("JP", "BR")   # both 50 and 60 Hz in use: never a contradiction
+
+# Prior appearance (§6.4), witness handed over from Adithi. The base settings (PRIOR_SAMPLE_FPS, PRIOR_MAX_HAMMING,
+# PRIOR_MIN_MATCHED_FRAMES, PRIOR_MIN_MATCHED_FRACTION, ARCHIVE_JSON) stay in Adithi's section below.
+PRIOR_SHORT_MAX_HAMMING = 4          # photos / clips with < PRIOR_MIN_MATCHED_FRAMES sampled frames: ONE frame decides,
+                                     # so it must be near-identical (re-saved copies ~0-4 bits; unrelated images ~32)
+PRIOR_DATE_TOLERANCE_DAYS = 2        # verified_date outside the claimed time window +/- 2 days -> disagrees
+PRIOR_LOCATION_TOLERANCE_KM = 50.0   # verified lat/lon > 50 km from the claimed lat/lon -> disagrees. Entries without
+                                     # coordinates: a place-name match can agree, a mismatch is never a contradiction
+PRIOR_MAX_INPUTS = 2                 # check at most 2 images/videos per investigation (speed)
+PRIOR_HIGH_MAX_MEDIAN_HAMMING = 1.5  # consistent/contradiction (high) only if the matched frames' median Hamming <= this
+                                     # (near-identical copy); else inconclusive / medium. Measured 2026-11-19 on 10 close-up
+                                     # takes (4K original archived): true copies (1080p, WhatsApp-style 848/640 px CRF 28)
+                                     # median 0-1.0; OTHER takes of the same scene that pass the frame rule median 2-8
+                                     # (13 pairs at 2). 1.5 = widest margin; the gap is clean but only 1 bit wide.
+# Live Desk "Time Machine" (§14): matched upload/archive frame pairs saved as JPGs in artifacts/frames/.
+PRIOR_TIME_MACHINE_MAX_PAIRS = 3     # Sam's decision: 3 pairs = best match from the start / middle / end
+                                     # thirds of the matched frames (fewer matches: all of them)
+PRIOR_TIME_MACHINE_WIDTH = 640       # px, JPG width (display only; hashing is unaffected)
+PRIOR_TIME_MACHINE_JPEG_QUALITY = 80
 
 
 # =============================================================================
@@ -245,7 +310,13 @@ ENF_FREQS_60HZ = (60.0, 120.0)
 # =============================================================================
 
 # Metadata integrity (§6.2)
-METADATA_MAX_DATE_DIFF_DAYS = 2      # capture date vs claimed date
+# Capture time vs the claim's [start, end] window (calibrated on the team's genuine clips):
+#   time zone known (offset in the file, or QuickTime UTC): within the window +/- this many hours
+#   is consistent, further outside is a contradiction (medium).
+METADATA_TIME_MARGIN_HOURS = 12
+#   time zone unknown (no offset): outside the window but within this many days is inconclusive,
+#   further outside is a contradiction (medium).
+METADATA_MAX_DATE_DIFF_DAYS = 2
 METADATA_MAX_GPS_DIST_KM = 50.0      # GPS vs claimed location
 METADATA_EDITING_SOFTWARE = [
     "photoshop", "lightroom", "snapseed", "capcut", "picsart", "facetune",

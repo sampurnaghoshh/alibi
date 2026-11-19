@@ -57,6 +57,40 @@ def test_video_duration_without_ffprobe(tmp_path, make_video, monkeypatch):
     assert storage.probe_duration(video, "image/png") is None
 
 
+@pytest.mark.parametrize("ffprobe_out", ["-12.5", "0", "N/A", "", "nan", "inf", "99999999"])
+def test_bad_ffprobe_duration_falls_back_to_clip_duration(tmp_path, make_video, monkeypatch, ffprobe_out):
+    """Garbage from ffprobe is never stored; the shared media.clip_duration answers instead."""
+    import subprocess as sp
+
+    import app.storage as storage
+    monkeypatch.setattr(storage.shutil, "which", lambda name: "ffprobe")
+    monkeypatch.setattr(storage.subprocess, "run",
+                        lambda *a, **k: sp.CompletedProcess(a, 0, stdout=ffprobe_out + "\n", stderr=""))
+    video = make_video(tmp_path / "clip.mp4", seconds=3, fps=10)
+    assert storage.probe_duration(video, "video/mp4") == pytest.approx(3.0, abs=0.2)
+
+
+@pytest.mark.parametrize("opencv", [-9.2e15, 0, None, float("nan"), 10 ** 9])
+def test_no_negative_or_absurd_duration_without_ffprobe(tmp_path, monkeypatch, opencv):
+    """No ffprobe and a broken frame count (e.g. a streamed Matroska file) -> None, never a bogus number."""
+    import app.media as media
+    import app.storage as storage
+    monkeypatch.setattr(storage.shutil, "which", lambda name: None)
+    monkeypatch.setattr(media, "clip_duration", lambda path, mime=None: opencv)
+    clip = tmp_path / "stream.mkv"
+    clip.write_bytes(b"\0" * 64)
+    assert storage.probe_duration(clip, "video/x-matroska") is None
+    assert storage.probe_duration(clip, "audio/mpeg") is None          # audio without ffprobe: unknown
+
+
+def test_probe_duration_uses_the_shared_clip_duration(tmp_path, make_video, monkeypatch):
+    import app.media as media
+    import app.storage as storage
+    monkeypatch.setattr(storage.shutil, "which", lambda name: None)
+    video = make_video(tmp_path / "clip.mp4", seconds=3, fps=10)
+    assert storage.probe_duration(video, "video/mp4") == media.clip_duration(video, "video/mp4")
+
+
 def test_parse_posted_at():
     assert parse_posted_at("2026-11-19").utcoffset().total_seconds() == 5.5 * 3600
     assert parse_posted_at("2026-11-19T10:00:00Z").utcoffset().total_seconds() == 0

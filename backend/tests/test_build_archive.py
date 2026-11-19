@@ -98,7 +98,7 @@ def test_archive_and_witness_hashes_are_identical(tmp_path, make_video):
     import shutil
 
     from app import config
-    from app.media import phash_hex, sample_frames
+    from app.media import phash_hex, sample_fps_for, sample_frames
 
     archive_dir = tmp_path / "archive"
     archive_dir.mkdir()
@@ -117,7 +117,7 @@ def test_archive_and_witness_hashes_are_identical(tmp_path, make_video):
     for name, cid in (("clip.mp4", "clip_v"), ("photo.jpg", "clip_p")):
         copy = uploads / f"in_1_{name}"
         shutil.copyfile(archive_dir / name, copy)
-        frames = sample_frames(copy, config.PRIOR_SAMPLE_FPS)
+        frames = sample_frames(copy, sample_fps_for(clips[cid]["duration_s"]))   # same rule as the witness
         assert [phash_hex(img) for _, img in frames] == clips[cid]["frame_hashes"]
         assert [t for t, _ in frames] == clips[cid]["frame_times_s"]
         assert all(img.width == 640 for _, img in frames)           # downscaled before hashing
@@ -149,7 +149,10 @@ def test_frame_at_seeks_to_the_right_full_resolution_frame(tmp_path, make_video)
         assert abs(int(np.asarray(img).mean()) - 10 * idx) <= 4          # and visibly not a neighbour
 
 
-def test_video_sampled_at_one_frame_per_second(tmp_path, make_video):
+def test_video_sampled_at_one_frame_per_second(tmp_path, make_video, monkeypatch):
+    from app import config
+
+    monkeypatch.setattr(config, "SHORT_CLIP_S", 0)    # normal-length path; short clips (4 fps): test_prior_appearance
     rng = np.random.default_rng(1)
     scenes = [rng.integers(0, 256, (64, 64, 3), dtype=np.uint8) for _ in range(3)]
     make_video(tmp_path / "clip.mp4", seconds=3, fps=10, frame_fn=lambda i: scenes[i // 10])
@@ -160,4 +163,5 @@ def test_video_sampled_at_one_frame_per_second(tmp_path, make_video):
     [clip] = json.loads(out.read_text(encoding="utf-8"))["clips"]
     assert clip["frame_times_s"] == [0.0, 1.0, 2.0]
     assert len(clip["frame_hashes"]) == 3
+    assert clip["sample_fps"] == 1.0
     assert clip["duration_s"] == pytest.approx(3.0, abs=0.2)

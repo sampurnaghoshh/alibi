@@ -1,0 +1,591 @@
+{
+  "title": "ALIBI lip-sync synchrony indicator: calibration record",
+  "date": "2026-11-19",
+  "rule": "contradiction if speech in >= 50% of windows AND (|lag| >= L OR corr < C OR prominence < P)",
+  "runs": [
+    {
+      "name": "far_away_4k",
+      "description": "5 genuine iPhone 4K clips (face far from camera) + 5 audio-swapped controls. Exploratory: no held-out split, all clips used to calibrate.",
+      "config": {
+        "analysis_fps": 30.0,
+        "frame_px": 960,
+        "frame_px_meaning": "long side",
+        "span_s": null,
+        "lag_search_s": 0.3
+      },
+      "clips": [
+        {
+          "clip": "IMG_5383.MOV",
+          "group": "genuine",
+          "set": "calibrate",
+          "faceH": 0.21,
+          "speech_window_fraction": 1.0,
+          "aperture": {
+            "lag_s": 0.067,
+            "corr": 0.059,
+            "prominence": 0.042
+          },
+          "velocity": {
+            "lag_s": 0.3,
+            "corr": 0.115,
+            "prominence": 0.137
+          }
+        },
+        {
+          "clip": "IMG_5384.MOV",
+          "group": "genuine",
+          "set": "calibrate",
+          "faceH": 0.264,
+          "speech_window_fraction": 0.826,
+          "aperture": {
+            "lag_s": 0.067,
+            "corr": 0.066,
+            "prominence": 0.094
+          },
+          "velocity": {
+            "lag_s": 0.233,
+            "corr": 0.278,
+            "prominence": 0.172
+          }
+        },
+        {
+          "clip": "IMG_5388.MOV",
+          "group": "genuine",
+          "set": "calibrate",
+          "faceH": 0.236,
+          "speech_window_fraction": 1.0,
+          "aperture": {
+            "lag_s": 0.0,
+            "corr": 0.191,
+            "prominence": 0.223
+          },
+          "velocity": {
+            "lag_s": 0.0,
+            "corr": 0.183,
+            "prominence": 0.154
+          }
+        },
+        {
+          "clip": "IMG_5390.MOV",
+          "group": "genuine",
+          "set": "calibrate",
+          "faceH": 0.181,
+          "speech_window_fraction": 1.0,
+          "aperture": {
+            "lag_s": 0.3,
+            "corr": -0.035,
+            "prominence": 0.107
+          },
+          "velocity": {
+            "lag_s": 0.2,
+            "corr": 0.201,
+            "prominence": 0.252
+          }
+        },
+        {
+          "clip": "IMG_5394.MOV",
+          "group": "genuine",
+          "set": "calibrate",
+          "faceH": 0.184,
+          "speech_window_fraction": 0.88,
+          "aperture": {
+            "lag_s": 0.0,
+            "corr": 0.189,
+            "prominence": 0.269
+          },
+          "velocity": {
+            "lag_s": 0.233,
+            "corr": 0.243,
+            "prominence": 0.207
+          }
+        },
+        {
+          "clip": "v5383_a5384.MOV",
+          "group": "swapped",
+          "set": "calibrate",
+          "faceH": 0.21,
+          "speech_window_fraction": 0.8,
+          "aperture": {
+            "lag_s": -0.3,
+            "corr": 0.017,
+            "prominence": 0.074
+          },
+          "velocity": {
+            "lag_s": 0.167,
+            "corr": 0.045,
+            "prominence": 0.043
+          }
+        },
+        {
+          "clip": "v5384_a5388.MOV",
+          "group": "swapped",
+          "set": "calibrate",
+          "faceH": 0.264,
+          "speech_window_fraction": 1.0,
+          "aperture": {
+            "lag_s": -0.3,
+            "corr": 0.09,
+            "prominence": 0.124
+          },
+          "velocity": {
+            "lag_s": -0.2,
+            "corr": 0.105,
+            "prominence": 0.123
+          }
+        },
+        {
+          "clip": "v5388_a5390.MOV",
+          "group": "swapped",
+          "set": "calibrate",
+          "faceH": 0.236,
+          "speech_window_fraction": 1.0,
+          "aperture": {
+            "lag_s": -0.1,
+            "corr": 0.113,
+            "prominence": 0.16
+          },
+          "velocity": {
+            "lag_s": -0.167,
+            "corr": 0.052,
+            "prominence": 0.088
+          }
+        },
+        {
+          "clip": "v5390_a5394.MOV",
+          "group": "swapped",
+          "set": "calibrate",
+          "faceH": 0.181,
+          "speech_window_fraction": 0.786,
+          "aperture": {
+            "lag_s": -0.3,
+            "corr": 0.001,
+            "prominence": 0.059
+          },
+          "velocity": {
+            "lag_s": 0.067,
+            "corr": 0.147,
+            "prominence": 0.099
+          }
+        },
+        {
+          "clip": "v5394_a5383.MOV",
+          "group": "swapped",
+          "set": "calibrate",
+          "faceH": 0.185,
+          "speech_window_fraction": 1.0,
+          "aperture": {
+            "lag_s": 0.2,
+            "corr": 0.133,
+            "prominence": 0.044
+          },
+          "velocity": {
+            "lag_s": -0.1,
+            "corr": 0.139,
+            "prominence": 0.184
+          }
+        }
+      ]
+    },
+    {
+      "name": "closeup_1080p",
+      "description": "10 genuine close-up clips (1080p copies) + 10 audio-swapped controls made within each set. First 5 by filename = calibrate, last 5 = held-out test.",
+      "config": {
+        "analysis_fps": 30.0,
+        "frame_px": 640,
+        "frame_px_meaning": "width",
+        "span_s": 12.0,
+        "lag_search_s": 0.3
+      },
+      "clips": [
+        {
+          "clip": "IMG_5400.MOV",
+          "group": "genuine",
+          "set": "calibrate",
+          "faceH": 0.356,
+          "speech_window_fraction": 0.9,
+          "aperture": {
+            "lag_s": 0.3,
+            "corr": 0.099,
+            "prominence": 0.159
+          },
+          "velocity": {
+            "lag_s": -0.033,
+            "corr": 0.149,
+            "prominence": 0.133
+          }
+        },
+        {
+          "clip": "IMG_5401.MOV",
+          "group": "genuine",
+          "set": "calibrate",
+          "faceH": 0.342,
+          "speech_window_fraction": 0.3,
+          "aperture": {
+            "lag_s": 0.0,
+            "corr": 0.108,
+            "prominence": 0.184
+          },
+          "velocity": {
+            "lag_s": 0.167,
+            "corr": 0.325,
+            "prominence": 0.233
+          }
+        },
+        {
+          "clip": "IMG_5403.MOV",
+          "group": "genuine",
+          "set": "calibrate",
+          "faceH": 0.352,
+          "speech_window_fraction": 1.0,
+          "aperture": {
+            "lag_s": 0.0,
+            "corr": 0.38,
+            "prominence": 0.382
+          },
+          "velocity": {
+            "lag_s": -0.033,
+            "corr": 0.181,
+            "prominence": 0.166
+          }
+        },
+        {
+          "clip": "IMG_5404.MOV",
+          "group": "genuine",
+          "set": "calibrate",
+          "faceH": 0.359,
+          "speech_window_fraction": 1.0,
+          "aperture": {
+            "lag_s": -0.033,
+            "corr": 0.151,
+            "prominence": 0.261
+          },
+          "velocity": {
+            "lag_s": -0.033,
+            "corr": 0.194,
+            "prominence": 0.113
+          }
+        },
+        {
+          "clip": "IMG_5406.MOV",
+          "group": "genuine",
+          "set": "calibrate",
+          "faceH": 0.372,
+          "speech_window_fraction": 0.9,
+          "aperture": {
+            "lag_s": -0.033,
+            "corr": 0.31,
+            "prominence": 0.333
+          },
+          "velocity": {
+            "lag_s": 0.3,
+            "corr": 0.228,
+            "prominence": 0.165
+          }
+        },
+        {
+          "clip": "v5400_a5401.MOV",
+          "group": "swapped",
+          "set": "calibrate",
+          "faceH": 0.356,
+          "speech_window_fraction": 0.3,
+          "aperture": {
+            "lag_s": -0.3,
+            "corr": 0.435,
+            "prominence": 0.364
+          },
+          "velocity": {
+            "lag_s": -0.167,
+            "corr": 0.037,
+            "prominence": 0.133
+          }
+        },
+        {
+          "clip": "v5401_a5403.MOV",
+          "group": "swapped",
+          "set": "calibrate",
+          "faceH": 0.342,
+          "speech_window_fraction": 1.0,
+          "aperture": {
+            "lag_s": 0.2,
+            "corr": 0.136,
+            "prominence": 0.161
+          },
+          "velocity": {
+            "lag_s": 0.067,
+            "corr": 0.063,
+            "prominence": 0.076
+          }
+        },
+        {
+          "clip": "v5403_a5404.MOV",
+          "group": "swapped",
+          "set": "calibrate",
+          "faceH": 0.352,
+          "speech_window_fraction": 1.0,
+          "aperture": {
+            "lag_s": 0.1,
+            "corr": 0.114,
+            "prominence": 0.08
+          },
+          "velocity": {
+            "lag_s": -0.267,
+            "corr": 0.148,
+            "prominence": 0.127
+          }
+        },
+        {
+          "clip": "v5404_a5406.MOV",
+          "group": "swapped",
+          "set": "calibrate",
+          "faceH": 0.359,
+          "speech_window_fraction": 0.9,
+          "aperture": {
+            "lag_s": -0.2,
+            "corr": 0.208,
+            "prominence": 0.215
+          },
+          "velocity": {
+            "lag_s": -0.067,
+            "corr": 0.057,
+            "prominence": 0.065
+          }
+        },
+        {
+          "clip": "v5406_a5400.MOV",
+          "group": "swapped",
+          "set": "calibrate",
+          "faceH": 0.372,
+          "speech_window_fraction": 0.9,
+          "aperture": {
+            "lag_s": -0.167,
+            "corr": 0.29,
+            "prominence": 0.211
+          },
+          "velocity": {
+            "lag_s": 0.267,
+            "corr": 0.169,
+            "prominence": 0.305
+          }
+        },
+        {
+          "clip": "IMG_5407.MOV",
+          "group": "genuine",
+          "set": "test",
+          "faceH": 0.379,
+          "speech_window_fraction": 1.0,
+          "aperture": {
+            "lag_s": 0.0,
+            "corr": 0.059,
+            "prominence": 0.185
+          },
+          "velocity": {
+            "lag_s": -0.033,
+            "corr": 0.136,
+            "prominence": 0.088
+          }
+        },
+        {
+          "clip": "IMG_5408.MOV",
+          "group": "genuine",
+          "set": "test",
+          "faceH": 0.329,
+          "speech_window_fraction": 1.0,
+          "aperture": {
+            "lag_s": -0.067,
+            "corr": 0.309,
+            "prominence": 0.235
+          },
+          "velocity": {
+            "lag_s": -0.033,
+            "corr": 0.283,
+            "prominence": 0.27
+          }
+        },
+        {
+          "clip": "IMG_5409.MOV",
+          "group": "genuine",
+          "set": "test",
+          "faceH": 0.291,
+          "speech_window_fraction": 1.0,
+          "aperture": {
+            "lag_s": -0.3,
+            "corr": 0.18,
+            "prominence": 0.121
+          },
+          "velocity": {
+            "lag_s": 0.3,
+            "corr": 0.166,
+            "prominence": 0.193
+          }
+        },
+        {
+          "clip": "IMG_5411.MOV",
+          "group": "genuine",
+          "set": "test",
+          "faceH": 0.315,
+          "speech_window_fraction": 1.0,
+          "aperture": {
+            "lag_s": -0.033,
+            "corr": 0.261,
+            "prominence": 0.177
+          },
+          "velocity": {
+            "lag_s": -0.033,
+            "corr": 0.21,
+            "prominence": 0.26
+          }
+        },
+        {
+          "clip": "IMG_5413.MOV",
+          "group": "genuine",
+          "set": "test",
+          "faceH": 0.346,
+          "speech_window_fraction": 1.0,
+          "aperture": {
+            "lag_s": 0.0,
+            "corr": 0.253,
+            "prominence": 0.132
+          },
+          "velocity": {
+            "lag_s": 0.1,
+            "corr": 0.154,
+            "prominence": 0.16
+          }
+        },
+        {
+          "clip": "v5407_a5408.MOV",
+          "group": "swapped",
+          "set": "test",
+          "faceH": 0.383,
+          "speech_window_fraction": 1.0,
+          "aperture": {
+            "lag_s": 0.0,
+            "corr": 0.224,
+            "prominence": 0.192
+          },
+          "velocity": {
+            "lag_s": 0.067,
+            "corr": 0.225,
+            "prominence": 0.26
+          }
+        },
+        {
+          "clip": "v5408_a5409.MOV",
+          "group": "swapped",
+          "set": "test",
+          "faceH": 0.329,
+          "speech_window_fraction": 1.0,
+          "aperture": {
+            "lag_s": 0.233,
+            "corr": 0.085,
+            "prominence": 0.066
+          },
+          "velocity": {
+            "lag_s": 0.067,
+            "corr": 0.166,
+            "prominence": 0.082
+          }
+        },
+        {
+          "clip": "v5409_a5411.MOV",
+          "group": "swapped",
+          "set": "test",
+          "faceH": 0.278,
+          "speech_window_fraction": 1.0,
+          "aperture": {
+            "lag_s": -0.167,
+            "corr": 0.304,
+            "prominence": 0.3
+          },
+          "velocity": {
+            "lag_s": 0.233,
+            "corr": 0.2,
+            "prominence": 0.198
+          }
+        },
+        {
+          "clip": "v5411_a5413.MOV",
+          "group": "swapped",
+          "set": "test",
+          "faceH": 0.315,
+          "speech_window_fraction": 1.0,
+          "aperture": {
+            "lag_s": 0.3,
+            "corr": -0.106,
+            "prominence": 0.121
+          },
+          "velocity": {
+            "lag_s": -0.167,
+            "corr": 0.074,
+            "prominence": 0.117
+          }
+        },
+        {
+          "clip": "v5413_a5407.MOV",
+          "group": "swapped",
+          "set": "test",
+          "faceH": 0.346,
+          "speech_window_fraction": 1.0,
+          "aperture": {
+            "lag_s": -0.3,
+            "corr": 0.099,
+            "prominence": 0.122
+          },
+          "velocity": {
+            "lag_s": -0.267,
+            "corr": 0.077,
+            "prominence": 0.105
+          }
+        }
+      ]
+    }
+  ],
+  "frozen_thresholds": {
+    "frozen_from": "closeup_1080p calibrate set only, before the test set was analysed",
+    "min_speech_window_fraction": 0.5,
+    "aperture": {
+      "min_abs_lag_s": null,
+      "max_corr": null,
+      "max_prominence": 0.1195
+    },
+    "velocity": {
+      "min_abs_lag_s": null,
+      "max_corr": 0.1485,
+      "max_prominence": 0.0945
+    },
+    "null_means": "condition disabled"
+  },
+  "test_outcome": {
+    "aperture": {
+      "genuine_wrongly_flagged": [],
+      "genuine_total": 5,
+      "swaps_caught": [
+        "v5408_a5409.MOV"
+      ],
+      "swaps_total": 5,
+      "calibrate_genuine_flagged": [],
+      "calibrate_swaps_caught": [
+        "v5403_a5404.MOV"
+      ]
+    },
+    "velocity": {
+      "genuine_wrongly_flagged": [
+        "IMG_5407.MOV"
+      ],
+      "genuine_total": 5,
+      "swaps_caught": [
+        "v5408_a5409.MOV",
+        "v5411_a5413.MOV",
+        "v5413_a5407.MOV"
+      ],
+      "swaps_total": 5,
+      "calibrate_genuine_flagged": [],
+      "calibrate_swaps_caught": [
+        "v5401_a5403.MOV",
+        "v5403_a5404.MOV",
+        "v5404_a5406.MOV"
+      ]
+    }
+  },
+  "decision": "LIPSYNC_ALLOW_CONTRADICTION stays False and reliability stays capped at low: lip-sync is always reported as inconclusive and never accuses."
+}

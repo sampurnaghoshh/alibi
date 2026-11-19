@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import re
 import secrets
@@ -71,9 +72,24 @@ def parse_posted_at(value: Optional[str]) -> datetime:
     return dt if dt.tzinfo else dt.replace(tzinfo=config.DEFAULT_TZ)
 
 
+MAX_MEDIA_DURATION_S = 24 * 3600    # anything longer is a broken header, not a real upload
+
+
+def _sane_duration(value: Any) -> Optional[float]:
+    """A usable duration in seconds, or None: never negative, zero, NaN/inf or absurdly long."""
+    try:
+        d = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(d) or d <= 0 or d > MAX_MEDIA_DURATION_S:
+        return None
+    return round(d, 3)
+
+
 def probe_duration(path: Path, mime: str) -> Optional[float]:
-    """Duration in seconds for audio/video: ffprobe if installed, else OpenCV for video.
-    None for other files or when neither can read it."""
+    """Duration in seconds for audio/video: ffprobe if installed, else (video) media.clip_duration, the
+    same frame-count rule the archive builder and prior_appearance use. None for other files, when neither
+    can read it, or when the value is negative / absurd (some containers report garbage)."""
     if not mime.startswith(("video/", "audio/")):
         return None
     if shutil.which("ffprobe"):
@@ -82,16 +98,16 @@ def probe_duration(path: Path, mime: str) -> Optional[float]:
                 ["ffprobe", "-v", "quiet", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)],
                 capture_output=True, text=True, timeout=15,
             ).stdout.strip()
-            if out:
-                return round(float(out), 3)
-        except (subprocess.SubprocessError, ValueError, OSError):
+            d = _sane_duration(out)
+            if d is not None:
+                return d
+        except (subprocess.SubprocessError, OSError):
             pass
     if mime.startswith("video/"):
         try:
-            from app.media import video_info  # noqa: PLC0415 - OpenCV is heavy, load only when needed
+            from app.media import clip_duration  # noqa: PLC0415 - OpenCV is heavy, load only when needed
 
-            fps, count = video_info(path)
-            return round(count / fps, 3) if count and fps else None
+            return _sane_duration(clip_duration(path, mime))
         except Exception:  # noqa: BLE001 - duration is optional metadata
             return None
     return None

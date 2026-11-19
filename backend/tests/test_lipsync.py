@@ -89,10 +89,11 @@ def test_short_gaps_filled_long_gaps_kept():
 
 # --- witness run() with a stubbed analysis ------------------------------------
 
-def _fake_analysis(status: str, lag=0.30, corr=0.05, prom=0.04, has_audio=True, face_h=0.40) -> L.ClipAnalysis:
+def _fake_analysis(status: str, lag=0.30, corr=0.05, prom=0.04, has_audio=True, face_h=0.40,
+                   duration_s=10.0, span_s=None) -> L.ClipAnalysis:
     fps, n = 30.0, 300
     probe = L.MediaProbe(width=640, height=360, rotation=0, video_start_s=0.0,
-                         audio_start_s=0.0 if has_audio else None, duration_s=10.0, native_fps=30.0)
+                         audio_start_s=0.0 if has_audio else None, duration_s=duration_s, native_fps=30.0)
     t = np.arange(n) / fps
     mouth = L.MouthSeries(t=t, raw=_speechy(n), mouth=_speechy(n), face_found=np.ones(n, bool), frame_size=(640, 360),
                           face_height=np.full(n, face_h))
@@ -104,7 +105,7 @@ def _fake_analysis(status: str, lag=0.30, corr=0.05, prom=0.04, has_audio=True, 
     summary = {"face_fraction": 1.0, "speech_window_fraction": 1.0, "lag_s": lag, "corr": corr,
                "prominence": prom, "face_height": face_h, "status": status, "reason": "test"}
     return L.ClipAnalysis(probe, mouth, np.linspace(-60, -20, n), np.ones(n, bool), {}, {"velocity": sync},
-                          windows, summary, fps)
+                          windows, summary, fps, span_s)
 
 
 @pytest.fixture
@@ -221,3 +222,133 @@ def test_analysis_error_is_inconclusive_not_a_crash(stub, monkeypatch, tmp_path)
 def test_worst_windows_merges_overlaps():
     ws = [{"start_s": s, "end_s": s + 3, "corr": c} for s, c in [(0, 0.5), (1, -0.2), (2, -0.3), (8, -0.1), (9, None)]]
     assert L.worst_windows(ws, 3) == [(1, 5), (8, 11)]
+
+
+# --- span cap, early no-face exit, lag sign ----------------------------------------------
+
+def test_span_cap_adds_limitation_only_when_it_cuts(stub, monkeypatch):
+    monkeypatch.setattr(config, "LIPSYNC_MIN_FACE_HEIGHT", 0.25)
+    (f,), _ = stub(_fake_analysis("inconclusive", duration_s=30.0, span_s=12.0))
+    assert "Only the first 12 s of the clip were analysed" in f.limitations
+    (g,), _ = stub(_fake_analysis("inconclusive", duration_s=10.0, span_s=12.0))
+    assert not any(x.startswith("Only the first") for x in g.limitations)
+
+
+def test_lag_sign_in_details_and_artifact(stub):
+    (f,), ctx = stub(_fake_analysis("inconclusive", lag=0.2))
+    series = json.loads((ctx.artifacts_dir / "lipsync_series.json").read_text(encoding="utf-8"))
+    assert f.details["lag_s"] == series["clip_lag_s"] == 0.2
+    assert f.details["lag_sign"] == series["lag_sign"] == "positive = audio after mouth"
+
+
+class _Pt:
+    def __init__(self, x, y):
+        self.x, self.y = x, y
+
+
+class _FakeLandmarker:
+    """Stands in for MediaPipe: a face (fixed landmarks) only on frames listed in `face_frames`."""
+
+    def __init__(self, face_frames):
+        self.face_frames, self.calls = set(face_frames), 0
+        pts = [_Pt(0.5, 0.5)] * 478
+        pts[L.FOREHEAD_TOP], pts[L.CHIN] = _Pt(0.5, 0.2), _Pt(0.5, 0.6)
+        pts[L.UPPER_INNER_LIP], pts[L.LOWER_INNER_LIP] = _Pt(0.5, 0.50), _Pt(0.5, 0.52)
+        self.pts = pts
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def detect_for_video(self, image, ts_ms):
+        i, self.calls = self.calls, self.calls + 1
+        return type("R", (), {"face_landmarks": [self.pts] if i in self.face_frames else []})()
+
+
+def _fake_frames(monkeypatch, n_frames):
+    """iter_frames replacement that yields n_frames tiny frames and records whether it was closed."""
+    state = {"yielded": 0, "closed": False}
+
+    def frames(path, probe, fps, width, max_s=None):
+        try:
+            for _ in range(n_frames):
+                state["yielded"] += 1
+                yield np.zeros((36, 64, 3), np.uint8)
+        finally:
+            state["closed"] = True
+
+    monkeypatch.setattr(L, "iter_frames", frames)
+    return state
+
+
+_PROBE = L.MediaProbe(width=64, height=36, rotation=0, video_start_s=0.0, audio_start_s=0.0,
+                      duration_s=20.0, native_fps=30.0)
+
+
+def test_no_face_in_opening_seconds_stops_early(monkeypatch):
+    pytest.importorskip("mediapipe")
+    monkeypatch.setattr(config, "LIPSYNC_FACE_PROBE_S", 3.0)
+    lm = _FakeLandmarker(face_frames=[])
+    monkeypatch.setattr(L, "_landmarker", lambda path: lm)
+    state = _fake_frames(monkeypatch, 600)                  # a 20 s clip at 30 fps
+    ms = L.mouth_series(Path("x.mp4"), _PROBE, fps=30.0, width=64)
+    assert ms.stopped_early
+    assert lm.calls == 90 and len(ms.t) == 90               # exactly 3 s of frames, not 600
+    assert state["closed"]                                  # generator closed -> ffmpeg killed
+
+
+def test_face_inside_opening_seconds_keeps_going(monkeypatch):
+    pytest.importorskip("mediapipe")
+    monkeypatch.setattr(config, "LIPSYNC_FACE_PROBE_S", 3.0)
+    lm = _FakeLandmarker(face_frames=range(80, 600))        # face appears at 2.7 s
+    monkeypatch.setattr(L, "_landmarker", lambda path: lm)
+    _fake_frames(monkeypatch, 600)
+    ms = L.mouth_series(Path("x.mp4"), _PROBE, fps=30.0, width=64)
+    assert not ms.stopped_early and len(ms.t) == 600
+    assert ms.median_face_height() == pytest.approx(0.4)
+
+
+def test_early_exit_is_not_applicable_finding(stub):
+    a = _fake_analysis("not_applicable")
+    a.summary["reason"] = L.NO_FACE_EARLY
+    (f,), _ = stub(a)
+    assert (f.status, f.reliability) == ("not_applicable", "low")
+    assert "no face detected in the opening seconds" in f.summary
+    _check_text(f)
+
+
+ffmpeg_missing = pytest.mark.skipif(not __import__("shutil").which("ffmpeg"), reason="ffmpeg not on PATH")
+
+
+@pytest.fixture
+def tone_clip(tmp_path):
+    """5 s synthetic 160x120 test-pattern video with a 220 Hz tone (no face)."""
+    import subprocess
+    out = tmp_path / "pattern.mp4"
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=160x120:r=30:d=5",
+                    "-f", "lavfi", "-i", "sine=f=220:d=5", "-c:v", "libx264", "-preset", "ultrafast",
+                    "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", str(out)], check=True, timeout=60)
+    return out
+
+
+@ffmpeg_missing
+def test_span_cap_limits_decoded_video_and_audio(tone_clip):
+    probe = L.probe_media(tone_clip)
+    frames = list(L.iter_frames(tone_clip, probe, 10.0, 64, max_s=2.0))
+    assert len(frames) == 20                                # 2 s at 10 fps, not 5 s
+    assert frames[0].shape == (48, 64, 3)                   # scale=64:-2 keeps 4:3
+    audio = L.load_audio(tone_clip, 16000, max_s=2.0)
+    assert abs(len(audio) - 32000) < 400
+
+
+@ffmpeg_missing
+def test_real_no_face_clip_exits_early(tone_clip, tmp_path, monkeypatch):
+    if not Path(config.LIPSYNC_FACE_MODEL).is_file():
+        pytest.skip("face model not installed (data/models/face_landmarker.task)")
+    monkeypatch.setattr(config, "LIPSYNC_FACE_PROBE_S", 1.0)
+    a = L.analyze_clip(tone_clip)
+    assert a.summary["status"] == "not_applicable" and a.summary["reason"] == L.NO_FACE_EARLY
+    assert len(a.mouth.t) == round(1.0 * config.LIPSYNC_ANALYSIS_FPS)
+    assert a.audio is None                                  # audio never decoded

@@ -16,7 +16,8 @@ Input:  data/archive/manifest.json, a hand-edited list of verified clips:
       }
     ]
 Output: data/archive/archive.json, the same entries plus
-    frame_hashes (64-bit pHash hex, 1 frame/s), frame_times_s, sample_fps, sha256, duration_s.
+    frame_hashes (64-bit pHash hex; 1 frame/s, or 4 frames/s for clips under 10 s: media.sample_fps_for),
+    frame_times_s, sample_fps (this clip's rate), sha256, duration_s.
 
 Frames are sampled with app/media.py, the same code the witness must use.
 Entries with problems are reported and skipped; the rest are still written.
@@ -40,7 +41,7 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "backend"))
 
 from app import config  # noqa: E402
-from app.media import media_kind, phash_hex, sample_frames, video_info  # noqa: E402
+from app.media import clip_duration, media_kind, phash_hex, sample_fps_for, sample_frames  # noqa: E402
 from app.storage import sha256_file  # noqa: E402
 
 REQUIRED = ("clip_id", "file", "title", "verified_date", "verified_location", "verified_by", "source_note")
@@ -71,20 +72,18 @@ def check_entry(entry: Any, base: Path, seen: set[str]) -> list[str]:
 
 def build_entry(entry: dict, base: Path, fps: float) -> dict:
     path = (base / entry["file"]).resolve()
-    frames = sample_frames(path, fps)
+    duration = clip_duration(path)                  # shared with the witness: same file -> same rate
+    clip_fps = sample_fps_for(duration, fps)        # short clips (< config.SHORT_CLIP_S) are sampled at 4 fps
+    frames = sample_frames(path, clip_fps)
     if not frames:
         raise RuntimeError("no frames could be decoded")
     times = [t for t, _ in frames]
-    duration = None
-    if media_kind(path) == "video":
-        vfps, count = video_info(path)
-        duration = round(count / vfps, 3) if count else None
     return {
         **{k: entry[k] for k in REQUIRED},
         **{k: entry[k] for k in OPTIONAL if k in entry},
         "sha256": sha256_file(path),
         "duration_s": duration,
-        "sample_fps": fps,
+        "sample_fps": clip_fps,                     # this clip's rate (the witness uses it per clip)
         "frame_times_s": times,
         "frame_hashes": [phash_hex(img) for _, img in frames],
     }
@@ -112,12 +111,13 @@ def build(manifest: Path, out: Path, fps: float) -> tuple[int, list[str]]:
             print(f"  FAIL {label}: {type(exc).__name__}: {exc}")
             continue
         built.append(row)
-        print(f"  ok   {label}: {len(row['frame_hashes'])} frame hash(es), {row['verified_location']}, {row['verified_date']}")
+        print(f"  ok   {label}: {len(row['frame_hashes'])} frame hash(es) at {row['sample_fps']:g} fps, "
+              f"{row['verified_location']}, {row['verified_date']}")
 
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps({
         "built_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "sample_fps": fps,
+        "sample_fps": fps,                          # normal rate; kept for older readers (per clip: clips[].sample_fps)
         "frame_max_width": config.FRAME_SAMPLE_MAX_WIDTH,   # frames shrunk to this before hashing
         "hash": "imagehash.phash, 64-bit, hex",
         "clips": built,
