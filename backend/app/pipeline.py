@@ -28,6 +28,7 @@ from app import config
 from app.claims.extract import extract_claims
 from app.engine.explain import explain_findings
 from app.engine.graph import build_graph
+from app.engine.summary import summarize
 from app.engine.rules import assess
 from app.live import feed
 from app.runner import all_witnesses, run_witnesses
@@ -211,7 +212,8 @@ def execute(p: Prepared, witnesses: Optional[list[Witness]] = None) -> Investiga
         findings = explain_findings(findings)
         assessment = assess(findings)
         store.log("assessment_computed", f"{assessment.headline}; human_review={assessment.human_review}",
-                  data={"assessment": assessment.model_dump(mode="json")})
+                  data={"assessment": assessment.model_dump(mode="json"),
+                        "summary": summarize(findings, claims)})          # the Live Desk shows this sentence
         graph = build_graph(p.inputs, claims, findings)
         store.log("graph_ready", f"{len(graph.nodes)} nodes, {len(graph.edges)} edges",
                   data={"graph": graph.model_dump(mode="json")})

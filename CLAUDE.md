@@ -407,6 +407,7 @@ alibi/
 | GET | `/api/investigations` | list past runs (history page) |
 | GET | `/api/files/{inv_id}/{path}` | serve originals (read-only) and artifacts |
 | GET | `/api/investigations/{id}/report` | printable HTML report (browser → Save as PDF) |
+| GET | `/api/investigations/{id}/summary` | the plain-language evidence summary `{sentence, counts, witnesses}` (`app/engine/summary.py`); the same text the report prints and the Live Desk shows |
 | GET | `/api/health` | witness availability (ffmpeg/exiftool found? LLM configured?) |
 
 **For Dhruva: demo buttons.** `GET /api/demo` returns `[{ "name", "caption", "posted_at", "files", "expect", "ready", "problem" }]`, e.g. `{"name": "case_a", ..., "ready": false, "problem": "The demo file 'demo/case_a/clip.mp4' does not exist yet. ..."}`. Enable a button only when `ready` is true, and show `problem` as its tooltip otherwise. Clicking runs `POST /api/demo/case_a` (no body) and returns a normal `Investigation`, so navigate to `/investigation/{id}` as after an upload. A case that isn't ready returns **404** with the reason in `detail`.
@@ -599,7 +600,7 @@ A live, end-to-end show of the whole system during the pitch, built on the same 
   | `claims_extracted` | `{claims: Claim[]}` |
   | `witness_started` | `{witness, family, label}` |
   | `witness_completed` / `witness_failed` | `{witness, elapsed_ms, findings: Finding[]}` (plus `reused_from` on re-runs), sent the moment that witness really finishes |
-  | `assessment_computed` | `{assessment}` |
+  | `assessment_computed` | `{assessment, summary}`: `summary` is `app/engine/summary.py`'s `{sentence, counts, witnesses}` (template, no LLM), shared with the report |
   | `graph_ready` | `{graph}` |
   | `done` | `{id, headline, headline_text, human_review, parent_id}`, then the stream closes. On error, `failed` with `{error}`. |
 

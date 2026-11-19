@@ -62,7 +62,6 @@
                      speaker: "Speaker", other: "Claim" };
   var SCOPE = { time: "time", location: "location", weather_condition: "event", event: "event", speaker: "speaker", other: "claim" };
   var SCOPE_ORDER = ["time", "location", "event", "speaker", "claim"];
-  var CONDITION = { flood: "flood", heavy_rain: "heavy rain", rain: "rain", storm: "storm", dry: "dry weather" };
   var C = { bg: "#0D1012", surface: "#15191D", elevated: "#1C2227", border: "#303840", text: "#E8ECEF",
             text2: "#929DA7", contra: "#D96B68", supports: "#69B88A", inconc: "#929CAA", accent: "#83B6D1" };
   var COLX = { input: 0, claim: 290, witness: 580 };
@@ -154,38 +153,6 @@
   }
   function captionScopes() { return sortScopes(current.claims.map(function (c) { return SCOPE[c.type] || "claim"; })); }
   function theScopes(list, word) { return joinWith(list.map(function (s) { return "the " + s; }), word || "and"); }
-  function eventWord() {
-    var c = current.claims.filter(function (x) { return x.type === "weather_condition" || x.type === "event"; })[0];
-    if (!c) return "conditions";
-    var cond = c.normalized && c.normalized.condition;
-    return CONDITION[cond] || c.value;
-  }
-  function metaWhat(scopes) {
-    var t = scopes.indexOf("time") >= 0, l = scopes.indexOf("location") >= 0;
-    return t && l ? "date and GPS position" : (l ? "GPS position" : "time");
-  }
-
-  // One clause per witness, from its findings' scope (template only, no LLM).
-  function witnessClause(w, status, scopes) {
-    var stated = scopes.length ? "the stated " + joinWith(scopes, "and") : "the caption";
-    var contra = {
-      weather: "Recorded rainfall does not support the claimed " + eventWord(),
-      metadata: "The file's capture " + metaWhat(scopes) + " contradicts " + stated,
-      prior_appearance: "Frames match an archive clip verified with a different " + (scopes.length ? joinWith(scopes, "and") : "context"),
-      lipsync: "Lip movement and speech audio are out of step",
-      enf: "The power-grid hum does not match the grid of the stated location"
-    };
-    var cons = {
-      weather: "Recorded rainfall is consistent with the claimed " + eventWord(),
-      metadata: "The capture " + metaWhat(scopes) + " matches " + stated,
-      prior_appearance: "Frames match an archive clip verified with the same " + (scopes.length ? joinWith(scopes, "and") : "context"),
-      lipsync: "Lip movement and speech audio move together",
-      enf: "The power-grid hum matches the grid of the stated location"
-    };
-    if (status === "contradiction") return contra[w] || (LABEL[w] + " contradicts " + stated);
-    return cons[w] || (LABEL[w] + " is consistent with " + stated);
-  }
-
   // ------------------------------------------------------------------ idle screen + build info
   function loadIdle() {
     fetch("/api/live/info").then(function (r) { return r.json(); }).then(function (info) {
@@ -812,61 +779,39 @@
     claims.forEach(function (c) { box.appendChild(claimTag(c)); });
   }
 
-  function witnessSummary() {   // per-witness merged statuses, in display order; stubs counted apart
-    var out = { contra: [], cons: [], other: [], unavailable: [] };
-    WITNESSES.forEach(function (w) {
-      var fs = current.byWitness[w[0]];
-      if (!fs) return;
-      if (isUnavailable(w[0])) { out.unavailable.push(w[0]); return; }
-      var s = worstStatus(fs);
-      var entry = { w: w[0], status: s, scopes: scopesOf(fs.filter(function (f) { return f.status === s; })) };
-      if (s === "contradiction") out.contra.push(entry);
-      else if (s === "consistent") out.cons.push(entry);
-      else out.other.push(entry);
-    });
-    return out;
-  }
-
-  // Plain sentences from what each witness checked (template, no LLM), e.g.
-  // "Recorded rainfall does not support the claimed flood. The capture time matches the stated time,
-  //  which does not confirm the location or the event. 3 other checks gave no clear answer."
-  function plainSentence(ws) {
-    var parts = [], all = captionScopes();
-    ws.contra.forEach(function (e) { parts.push(witnessClause(e.w, e.status, e.scopes) + "."); });
-    ws.cons.forEach(function (e) {
-      var others = all.filter(function (s) { return e.scopes.indexOf(s) < 0; });
-      var tail = !all.length ? "." : !e.scopes.length ? ", which says nothing about the caption's claims." :
-                 others.length ? ", which does not confirm " + theScopes(others, "or") + "." : ".";
-      parts.push(witnessClause(e.w, e.status, e.scopes) + tail);
-    });
-    if (ws.other.length) {
-      if (!ws.contra.length && !ws.cons.length) parts.push("None of the checks could confirm or contradict the caption with this media.");
-      else parts.push(ws.other.length + " other check" + (ws.other.length > 1 ? "s" : "") + " gave no clear answer.");
-    }
-    if (ws.unavailable.length) {
-      parts.push(joinWith(ws.unavailable.map(function (w) { return LABEL[w]; }), "and") + " " +
-                 (ws.unavailable.length > 1 ? "are" : "is") + " not available in this build.");
-    }
-    return parts.join(" ");
-  }
-
+  // The summary sentence and per-witness counts come from the backend (app/engine/summary.py), the same
+  // function the printable report uses, so the wording can never drift. The pipeline sends them with
+  // assessment_computed; runs made before that are fetched from /api/investigations/{id}/summary.
   function showAssessment(a) {
     $("result").className = "result " + headlineClass(a.headline);
     $("headline").textContent = a.headline_text;
-    var ws = witnessSummary();
-    $("sentence").textContent = plainSentence(ws);
+    var sm = current.summary;
+    $("sentence").textContent = sm ? sm.sentence : "";
     var counts = $("counts");
     counts.innerHTML = "";
-    var rows = [["n-contra", ws.contra.length, ws.contra.length === 1 ? "contradiction" : "contradictions"],
-                ["n-supports", ws.cons.length, "consistent"], ["n-other", ws.other.length, "inconclusive/other"]];
-    if (ws.unavailable.length) rows.push(["n-unav", ws.unavailable.length, "not available"]);
-    rows.forEach(function (c) {
-      var span = el("span", c[0]);
-      span.appendChild(el("b", "", pad2(c[1])));
-      span.appendChild(document.createTextNode(" " + c[2]));
-      counts.appendChild(span);
-    });
+    if (sm) {
+      var n = sm.counts;
+      var rows = [["n-contra", n.contradiction, n.contradiction === 1 ? "contradiction" : "contradictions"],
+                  ["n-supports", n.consistent, "consistent"], ["n-other", n.other, "inconclusive/other"]];
+      if (n.unavailable) rows.push(["n-unav", n.unavailable, "not available"]);
+      rows.forEach(function (c) {
+        var span = el("span", c[0]);
+        span.appendChild(el("b", "", pad2(c[1])));
+        span.appendChild(document.createTextNode(" " + c[2]));
+        counts.appendChild(span);
+      });
+    }
     refit();
+  }
+
+  function loadSummary(mine) {   // older runs: their assessment_computed event has no summary yet
+    fetch("/api/investigations/" + encodeURIComponent(mine.id) + "/summary").then(function (r) {
+      return r.ok ? r.json() : null;
+    }).then(function (sm) {
+      if (!sm || current !== mine) return;
+      mine.summary = sm;
+      if (mine.assessment) showAssessment(mine.assessment);
+    }).catch(function () { /* the headline still shows; only the sentence is missing */ });
   }
 
   function showTimeMachine(invId, findings) {   // prior_appearance with frame matches: the archive moment
@@ -927,7 +872,7 @@
     meta = meta || {};
     current = { id: id, claims: [], byWitness: {}, inputs: [], parentId: meta.parent_id || null,
                 caption: meta.caption || "", postedAt: meta.posted_at || null, assessment: null, es: null, cy: null,
-                sel: null, log: [], timing: {}, t0: null, tLast: null };
+                sel: null, log: [], timing: {}, t0: null, tLast: null, summary: null };
     $("idle").hidden = true;
     $("case").hidden = false;
     $("case-id").textContent = id;
@@ -1009,10 +954,14 @@
     };
     on("witness_completed", completed(false));
     on("witness_failed", completed(true));
-    on("assessment_computed", function (d) { if (d.assessment) { current.assessment = d.assessment; showAssessment(d.assessment); } });
+    on("assessment_computed", function (d) {
+      if (d.summary) current.summary = d.summary;
+      if (d.assessment) { current.assessment = d.assessment; showAssessment(d.assessment); }
+    });
     on("graph_ready", function () { Object.keys(current.byWitness).forEach(drawWitness); });   // idempotent re-check
     on("done", function (d) {
       setStatus("done");
+      if (!current.summary) loadSummary(current);
       es.close();
       var parent = d.parent_id || current.parentId;
       if (parent && current.assessment) showCompare(parent, current.caption, current.assessment);

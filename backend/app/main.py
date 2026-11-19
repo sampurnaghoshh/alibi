@@ -26,6 +26,7 @@ from pydantic import BaseModel, ValidationError
 
 from app import config
 from app.demo import load_cases
+from app.engine.summary import summarize
 from app.live import botinfo
 from app.live import events as live_events
 from app.live import feed as live_feed
@@ -268,6 +269,14 @@ def get_file(inv_id: str, path: str) -> FileResponse:
         return FileResponse(RunStore(inv_id).resolve(path))
     except (ValueError, FileNotFoundError):
         raise HTTPException(404, "file not found")
+
+
+@app.get("/api/investigations/{inv_id}/summary")
+def get_summary(inv_id: str) -> dict:
+    """The plain-language evidence summary (app/engine/summary.py), the same text the report prints.
+    The Live Desk normally gets it from the assessment_computed event; this serves older runs."""
+    inv = _get(inv_id)
+    return summarize(inv.findings, inv.claims)
 
 
 @app.get("/api/investigations/{inv_id}/report", response_class=HTMLResponse)

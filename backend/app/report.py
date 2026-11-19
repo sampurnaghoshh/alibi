@@ -12,11 +12,12 @@ from __future__ import annotations
 
 import base64
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from html import escape as e
 from typing import Any, Iterable, Optional
 
 from app import config
+from app.engine.summary import summarize
 from app.schemas import Finding, Investigation
 from app.storage import RunStore, now
 
@@ -28,10 +29,19 @@ STATUS_LABEL = {
     "not_applicable": "Not applicable",
 }
 # Contradictions first, not_applicable last; within a status, most reliable first.
+# Count pills: (singular, plural). Status adjectives don't take a plural.
+COUNT_WORDS = {
+    "contradiction": ("contradiction", "contradictions"),
+    "consistent": ("consistent", "consistent"),
+    "inconclusive": ("inconclusive", "inconclusive"),
+    "insufficient_signal": ("with insufficient signal", "with insufficient signal"),
+    "not_applicable": ("not applicable", "not applicable"),
+}
 STATUS_ORDER = {"contradiction": 0, "consistent": 1, "inconclusive": 2, "insufficient_signal": 3, "not_applicable": 4}
 RELIABILITY_ORDER = {"high": 0, "medium": 1, "low": 2}
 FAMILY_LABEL = {"context": "Context", "signal": "Signal", "pixels": "Pixels"}
 
+PAIR_KEYS = ("frame_matches",)      # prior_appearance Time Machine pairs: drawn by _pairs_html
 IMAGE_MIME = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}
 MAX_IMAGES_PER_FINDING = 6
 MAX_IMAGE_BYTES = 3 * 1024 * 1024
@@ -73,16 +83,34 @@ th { color:var(--muted); font-weight:600; }
 .finding ul { margin:0; padding-left:18px; }
 .imgs { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
 .imgs figure { margin:0; width:calc(50% - 3px); }
-.imgs img { width:100%; border:1px solid var(--line); }
+.imgs img { display:block; width:100%; max-height:70mm; object-fit:contain; background:#111; border:1px solid var(--line); }
 .imgs figcaption { font-size:8pt; color:var(--muted); }
 .score { font-size:9pt; color:var(--muted); }
+.nowrap { white-space:nowrap; }
+td.hash { font-size:8.5pt; color:var(--muted); padding-top:0; }
+td.hash .mono { color:var(--ink); }
+tbody.input { break-inside:avoid; }
+.summary { margin:0 0 8px; font-size:10.5pt; }
+.pairs { margin-top:6px; }
+.pair { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px; break-inside:avoid; }
+.pair figure { margin:0; }
+.pair img { display:block; width:100%; height:46mm; object-fit:contain; background:#111; border:1px solid var(--line); }
+.pair figure.archive img { border-color:var(--red); }
+.pair figcaption { font-size:8pt; color:var(--muted); margin-top:2px; }
+.verified { font-size:9pt; margin:4px 0 0; }
+details.appendix summary { cursor:pointer; color:var(--muted); font-size:9pt; }
+details.appendix pre { font-size:8pt; white-space:pre-wrap; word-break:break-word; background:var(--soft); padding:6px 8px; }
 footer { margin-top:20px; padding-top:8px; border-top:1px solid var(--line); font-size:8.5pt; color:var(--muted); }
 a { color:var(--accent); }
 @page { size:A4; margin:14mm 12mm; }
 @media print {
   main { padding:0; max-width:none; }
   a { color:inherit; text-decoration:none; }
-  h2 { break-after:avoid; }
+  h2, h3, h4 { break-after:avoid; }
+  .finding { break-inside:avoid; }
+  .finding.long { break-inside:auto; }
+  .finding .keep, .pair, figure, tr, .finding ul { break-inside:avoid; }
+  .finding .keep { break-after:avoid; }
   .no-print { display:none; }
 }
 """
@@ -135,12 +163,80 @@ def _caption_html(inv: Investigation) -> str:
     return f'<div class="caption">{"".join(out)}</div>'
 
 
+def _tz_name(d: datetime) -> str:
+    off = d.utcoffset()
+    if off is None:
+        return ""
+    if off == timedelta(hours=5, minutes=30):
+        return "IST"
+    if off == timedelta(0):
+        return "UTC"
+    sign = "+" if off >= timedelta(0) else "-"
+    mins = abs(int(off.total_seconds())) // 60
+    return f"UTC{sign}{mins // 60:02d}:{mins % 60:02d}"
+
+
+def _day(d: datetime) -> str:
+    return f"{d.day} {d:%b %Y}"
+
+
+def _time_window(n: dict) -> str:
+    """'18 Nov 2026, 17:00-21:00 IST · part of day' | '9-15 Nov 2026 · week' | 'Nov 2026 · month'."""
+    try:
+        start, end = datetime.fromisoformat(n["start"]), datetime.fromisoformat(n["end"])
+    except (KeyError, TypeError, ValueError):
+        return n.get("date") or "—"
+    precision = str(n.get("precision") or "")
+    tz = _tz_name(start)
+    tz = f" {tz}" if tz else ""
+    if start.time() == end.time() == datetime.min.time() and end > start:
+        last = end - timedelta(days=1)                       # day-based windows end at the next midnight
+        if precision == "year":
+            text = f"{start:%Y}"
+        elif precision == "month":
+            text = f"{start:%b %Y}"
+        elif last.date() == start.date():
+            text = _day(start)
+        elif (start.year, start.month) == (last.year, last.month):
+            text = f"{start.day}–{last.day} {last:%b %Y}"
+        else:
+            text = f"{_day(start)} – {_day(last)}"
+    elif start.date() == end.date():
+        text = f"{_day(start)}, {start:%H:%M}–{end:%H:%M}{tz}"
+    else:
+        text = f"{_day(start)}, {start:%H:%M} – {_day(end)}, {end:%H:%M}{tz}"
+    return text + (f" · {precision.replace('_', ' ')}" if precision else "")
+
+
+def _normalized_text(c) -> str:
+    """The claim's normalized value in words; the raw JSON is in the appendix."""
+    n = c.normalized or {}
+    if c.type == "location" and n.get("lat") is not None and n.get("lon") is not None:
+        lat, lon = float(n["lat"]), float(n["lon"])
+        text = f"{abs(lat):.4f}° {'N' if lat >= 0 else 'S'}, {abs(lon):.4f}° {'E' if lon >= 0 else 'W'}"
+        return text + (f" ({n['country']})" if n.get("country") else "")
+    if c.type == "time" and (n.get("start") or n.get("date")):
+        return _time_window(n)
+    if n.get("condition"):
+        return str(n["condition"]).replace("_", " ")
+    return "—" if not n else json.dumps(n, ensure_ascii=False, separators=(", ", ": "))
+
+
+def _claims_appendix(inv: Investigation) -> str:
+    if not inv.claims:
+        return ""
+    raw = json.dumps({c.id: c.normalized for c in inv.claims}, ensure_ascii=False, indent=2)
+    return ('<h2>Appendix: raw claim data</h2>'
+            '<details class="appendix" open><summary>Normalized values as stored (JSON)</summary>'
+            f"<pre class='mono'>{e(raw)}</pre></details>")
+
+
 def _claims_table(inv: Investigation) -> str:
     if not inv.claims:
         return '<p class="muted">No claims were extracted from the caption.</p>'
     rows = "".join(
         f"<tr><td class='mono'>{e(c.id)}</td><td>{e(c.type)}</td><td>{e(c.value)}</td>"
-        f"<td class='mono'>{_value(c.normalized)}</td><td class='mono'>[{c.source.start}:{c.source.end}]</td>"
+        f"<td>{e(_normalized_text(c))}</td><td class='mono'>[{c.source.start}:{c.source.end}]</td>"
         f"<td>{e(c.extracted_by)}</td></tr>"
         for c in inv.claims
     )
@@ -170,7 +266,7 @@ def _image_refs(f: Finding) -> list[tuple[str, str]]:
             for x in v:
                 walk(x, key)
 
-    walk(f.details, "details")
+    walk({k: v for k, v in f.details.items() if k not in PAIR_KEYS}, "details")
     return refs[:MAX_IMAGES_PER_FINDING]
 
 
@@ -191,6 +287,46 @@ def _images_html(f: Finding, store: Optional[RunStore]) -> str:
         figs.append(f'<figure><img src="data:{mime};base64,{data}" alt="{e(label)}">'
                     f"<figcaption>{e(label)} · <code>{e(ref)}</code></figcaption></figure>")
     return f'<div class="imgs">{"".join(figs)}</div>' if figs else ""
+
+
+def _data_uri(store: Optional[RunStore], ref: Optional[str]) -> Optional[str]:
+    if store is None or not ref:
+        return None
+    try:
+        path = store.resolve(ref)
+    except (FileNotFoundError, ValueError):
+        return None
+    if path.suffix.lower() not in IMAGE_MIME or path.stat().st_size > MAX_IMAGE_BYTES:
+        return None
+    return f"data:{IMAGE_MIME[path.suffix.lower()]};base64,{base64.b64encode(path.read_bytes()).decode('ascii')}"
+
+
+def _pair_figure(uri: Optional[str], cls: str, caption: str) -> str:
+    img = f'<img src="{uri}" alt="{e(caption)}">' if uri else '<div class="muted">frame not available</div>'
+    return f'<figure class="{cls}">{img}<figcaption>{e(caption)}</figcaption></figure>'
+
+
+def _pairs_html(f: Finding, store: Optional[RunStore]) -> str:
+    """Time Machine: each matched upload frame next to its verified archive frame."""
+    d = f.details or {}
+    rows = []
+    for p in d.get("frame_matches") or []:
+        up, ar = _data_uri(store, p.get("upload_frame")), _data_uri(store, p.get("archive_frame"))
+        if not up and not ar:
+            continue
+        rows.append('<div class="pair">'
+                    + _pair_figure(up, "upload", f"This upload at {float(p.get('upload_s') or 0):.2f} s")
+                    + _pair_figure(ar, "archive", f"Verified archive at {float(p.get('archive_s') or 0):.2f} s"
+                                                  f" · Hamming {p.get('hamming')}")
+                    + "</div>")
+    if not rows:
+        return ""
+    who = " · ".join(str(x) for x in (d.get("verified_date"), d.get("verified_location"), d.get("verified_by")) if x)
+    verified = f'<p class="verified">Verified record: {e(who)}</p>' if who else ""
+    # the label, the verified record and the first pair stay together on one page
+    first, rest = rows[0], "".join(rows[1:])
+    return (f'<div class="keep"><h4>Matched frames (upload | verified archive)</h4>{verified}'
+            f'<div class="pairs">{first}</div></div><div class="pairs">{rest}</div>')
 
 
 def _evidence_html(f: Finding, inv: Investigation) -> str:
@@ -223,7 +359,8 @@ def _locations_html(f: Finding, inv: Investigation) -> str:
 def _details_html(f: Finding) -> str:
     if not f.details:
         return ""
-    rows = "".join(f"<tr><th>{e(str(k))}</th><td class='mono'>{_value(v)}</td></tr>" for k, v in f.details.items())
+    rows = "".join(f"<tr><th>{e(str(k))}</th><td class='mono'>{_value(v)}</td></tr>"
+                   for k, v in f.details.items() if k not in PAIR_KEYS)
     return f"<h4>Key details</h4><table>{rows}</table>"
 
 
@@ -235,13 +372,18 @@ def _list(title: str, items: Iterable[str]) -> str:
 def _finding_html(f: Finding, inv: Investigation, store: Optional[RunStore], weak: set[str]) -> str:
     weak_tag = ' <span class="chip">Weak indicator</span>' if f.id in weak else ""
     claims = ", ".join(f.claim_ids) or "whole file"
+    # A finding with matched frame pairs is taller than a page: let it break, but only between its parts.
+    long = " long" if (f.details or {}).get("frame_matches") else ""
     return f"""
-<section class="finding f-{e(f.status)}">
+<section class="finding f-{e(f.status)}{long}">
+  <div class="keep">
   <div class="head"><h3>{e(f.title)}</h3><div>{_chip(f.status)}{weak_tag}</div></div>
   <div class="sub">{e(config.WITNESS_LABELS.get(f.witness, f.witness))} witness ·
     {e(FAMILY_LABEL[f.family])} family · reliability <b>{e(f.reliability)}</b> ·
     claims: {e(claims)} · <code>{e(f.id)}</code> · {f.elapsed_ms} ms</div>
   <p>{e(f.summary)}</p>
+  </div>
+  {_pairs_html(f, store)}
   {_images_html(f, store)}
   {_details_html(f)}
   {_evidence_html(f, inv)}
@@ -253,20 +395,24 @@ def _finding_html(f: Finding, inv: Investigation, store: Optional[RunStore], wea
 
 def _custody_html(inv: Investigation) -> str:
     inputs = "".join(
-        f"<tr><td class='mono'>{e(i.file_id)}</td><td>{e(i.name)}</td><td>{e(i.mime)}</td><td>{_size(i.size)}</td>"
-        f"<td>{'—' if i.duration_s is None else f'{i.duration_s:.1f} s'}</td>"
-        f"<td class='mono break'>{e(i.sha256)}</td><td class='mono break'>{e(i.stored_path)}</td></tr>"
+        f"<tbody class='input'><tr><td class='mono'>{e(i.file_id)}</td><td>{e(i.name)}</td><td>{e(i.mime)}</td>"
+        f"<td class='nowrap'>{_size(i.size)}</td>"
+        f"<td class='nowrap'>{'—' if i.duration_s is None else f'{i.duration_s:.1f} s'}</td>"
+        f"<td class='mono break'>{e(i.stored_path)}</td></tr>"
+        f"<tr><td></td><td colspan='5' class='hash'>SHA-256 <span class='mono'>{e(i.sha256)}</span></td></tr></tbody>"
         for i in inv.inputs
-    ) or "<tr><td colspan='7' class='muted'>No files were submitted.</td></tr>"
+    ) or "<tr><td colspan='6' class='muted'>No files were submitted.</td></tr>"
+    tz = f" ({_tz_name(inv.history[0].ts) or 'local time'})" if inv.history else ""
     history = "".join(
-        f"<tr><td class='mono'>{e(h.ts.isoformat())}</td><td>{e(h.event)}</td><td class='mono break'>{e(h.detail)}</td></tr>"
+        f"<tr><td class='mono nowrap'>{h.ts:%Y-%m-%d %H:%M:%S}.{h.ts.microsecond // 1000:03d}</td>"
+        f"<td class='nowrap'>{e(h.event)}</td><td class='mono break'>{e(h.detail)}</td></tr>"
         for h in inv.history
     ) or "<tr><td colspan='3' class='muted'>No history recorded.</td></tr>"
     return f"""
 <h3>Inputs (originals stored read-only)</h3>
-<table><tr><th>ID</th><th>Name</th><th>Type</th><th>Size</th><th>Duration</th><th>SHA-256</th><th>Stored at</th></tr>{inputs}</table>
+<table><tr><th>ID</th><th>Name</th><th>Type</th><th>Size</th><th>Duration</th><th>Stored at</th></tr>{inputs}</table>
 <h3 style="margin-top:10px">History log</h3>
-<table><tr><th>Time</th><th>Event</th><th>Detail</th></tr>{history}</table>"""
+<table><tr><th>Time{e(tz)}</th><th>Event</th><th>Detail</th></tr>{history}</table>"""
 
 
 # --- page ------------------------------------------------------------------------
@@ -275,12 +421,13 @@ def render_report(inv: Investigation, store: Optional[RunStore] = None) -> str:
     """Full HTML page. `store` (the run folder) is only used to embed artifact images."""
     a = inv.assessment
     weak = set(a.weak_indicators)
+    sentence = summarize(inv.findings, inv.claims)["sentence"]   # the same text the Live Desk shows
     by_id = {f.id: f for f in inv.findings}
     ordered = sorted(inv.findings, key=lambda f: (STATUS_ORDER[f.status], RELIABILITY_ORDER[f.reliability]))
 
     counts = a.counts.model_dump()
     pills = "".join(
-        f'<span class="s-{s}">{counts[s]} {e(STATUS_LABEL[s].lower())}</span>'
+        f'<span class="s-{s}">{counts[s]} {e(COUNT_WORDS[s][0 if counts[s] == 1 else 1])}</span>'
         for s in STATUS_ORDER if counts.get(s)
     ) or '<span>No findings</span>'
     families = "".join(
@@ -315,6 +462,7 @@ def render_report(inv: Investigation, store: Optional[RunStore] = None) -> str:
 
 <h2>Assessment</h2>
 <div class="headline">{e(a.headline_text)}</div>
+{f'<p class="summary">{e(sentence)}</p>' if sentence else ""}
 <div class="pills">{pills}</div>
 <table style="width:auto;margin-top:6px">{families}
   <tr><th>Human review</th><td>{e(a.human_review)}</td></tr></table>
@@ -333,6 +481,8 @@ def render_report(inv: Investigation, store: Optional[RunStore] = None) -> str:
 
 <h2>Chain of custody</h2>
 {_custody_html(inv)}
+
+{_claims_appendix(inv)}
 
 <footer>
   ALIBI v{e(config.APP_VERSION)} · report generated {e(_dt(now()))}.
