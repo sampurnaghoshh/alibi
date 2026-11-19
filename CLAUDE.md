@@ -49,9 +49,9 @@ ALIBI treats each kind of evidence (caption text, metadata, weather records, ear
 
 | Person | AI tools | Owns | Files |
 |---|---|---|---|
-| **Sampurna** (lead) | Claude Code (Opus) in VS Code | Repo skeleton, **evidence contract**, **rule engine**, graph builder, FastAPI app, storage, report, integration, final merges, **claim extraction** + LLM client (taken over from Nooman), **ELA witness** and **archive builder** (taken over from Adithi) | `backend/app/main.py`, `schemas.py`, `engine/*`, `storage.py`, `report.py`, `pipeline.py`, `media.py`, `claims/*`, `shared/*`, `witnesses/ela.py`, `scripts/build_archive.py`, `scripts/warm_cache.py` |
+| **Sampurna** (lead) | Claude Code (Opus) in VS Code | Repo skeleton, **evidence contract**, **rule engine**, graph builder, FastAPI app, storage, report, integration, final merges, **claim extraction** + LLM client (taken over from Nooman), **weather witness**, **ELA witness** and **archive builder** (taken over from Adithi) | `backend/app/main.py`, `schemas.py`, `engine/*`, `storage.py`, `report.py`, `pipeline.py`, `media.py`, `uploads.py`, `demo.py`, `claims/*`, `shared/*`, `witnesses/weather.py`, `witnesses/ela.py`, `scripts/build_archive.py`, `scripts/warm_cache.py` |
 | **Nooman** | Claude Code (Opus) in VS Code | **Lip-sync witness**, **ENF audio witness** (conditional), calibration scripts | `witnesses/lipsync.py`, `witnesses/enf.py`, `scripts/calibrate_*.py`, `scripts/test_enf.py` |
-| **Adithi** | Free LLMs | **Metadata witness**, **weather witness**, **prior-appearance witness** | `witnesses/metadata.py`, `witnesses/weather.py`, `witnesses/prior_appearance.py` |
+| **Adithi** | Free LLMs | **Metadata witness**, **prior-appearance witness** | `witnesses/metadata.py`, `witnesses/prior_appearance.py` |
 | **Dhruva** | Free LLMs | **Entire frontend**: upload page, investigation dashboard, contradiction graph, witness cards, evidence drawer, report view, demo polish | `frontend/*` |
 
 **Rule:** don't edit files you don't own. Need a change elsewhere? Message the owner. Contract changes (`schemas.py`, `shared/contract.schema.json`, `shared/fixtures/*`) are made **only by Sampurna** and announced in the group.
@@ -199,7 +199,7 @@ A list, newest first. Fetch the full `Investigation` by `id` for anything else. 
 |---|---|---|---|---|
 | 1 | Claim extraction (not a witness, it feeds everything) | Sampurna (from Nooman) | Done | n/a |
 | 2 | Metadata integrity | Adithi | **Must** | medium |
-| 3 | Weather (grid + 72 h) | Adithi | **Must** | medium |
+| 3 | Weather (grid + 72 h) | Sampurna (from Adithi) | Done | medium |
 | 4 | Prior appearance (perceptual-hash archive) | Adithi | **Must** | high |
 | 5 | Lip-sync synchrony indicator | Nooman | **Must** | medium |
 | 6 | ENF power-grid hum | Nooman | **Conditional** on the hour-1 test | medium |
@@ -257,7 +257,15 @@ All thresholds below are **starting values. Calibrate them on genuine clips** an
   - Editing software found → separate finding, `inconclusive` (low), title "Editing software tag present".
 - Always list: "Metadata can be edited or removed; it is supporting evidence, not ground truth."
 
-### 6.3 Weather (Adithi): `witnesses/weather.py`
+### 6.3 Weather (Sampurna, taken over from Adithi; done): `witnesses/weather.py`
+- **Done**, with these refinements of the brief below:
+  - **Only rain that had already fallen counts.** Hours after `min(now, posted_at)` are never used, and forecast values are never evidence. A claimed window that runs past that point is incomplete, so the result is `inconclusive`.
+  - **One request for all 5 points**, with times in UTC and an 8 s timeout. Recent claims use the forecast API with `past_days` sized to the claim (up to 92); older claims use the archive API.
+  - **The three numbers:** (a) centre rain in the claimed window, (b) max of the 4 surrounding points over the claimed day(s), (c) centre rain over the 72 h up to the window end. Hourly values cover the preceding hour, so the count is `start < t ≤ end`.
+  - **Cache:** `data/cache/openmeteo_*.json`, keyed by place and dates, so a warmed cache works on a later day. Archive data is kept forever. Forecast data is refreshed after about 1 h when online, and the older copy is used when offline.
+  - **Output for the frontend:** `details` has `centre {lat, lon, window_mm, day_mm}`, `grid [{label, lat, lon, day_mm, window_mm}]`, `grid_max_mm`, `prior_72h_mm`, `hourly_centre [{t, mm}]`, `coverage`, `thresholds` and `api`. Evidence is the Open-Meteo request URL plus `artifacts/weather_grid.json`.
+  - **Dry, storm and other claims:** the numbers are shown for reference only, always `inconclusive`.
+  - **Tests:** `tests/test_weather.py` replays recorded responses from `tests/fixtures/weather/` offline. Re-record them with `python tests/fixtures/weather/record.py`.
 - Needs location + time claims, plus a weather/event claim (flood, rain, storm, dry). Otherwise `not_applicable`.
 - **API choice matters:**
   - Claimed date within the last ~90 days → **forecast API with `past_days`**: `https://api.open-meteo.com/v1/forecast?latitude=..&longitude=..&hourly=precipitation&daily=precipitation_sum&past_days=7&timezone=auto`

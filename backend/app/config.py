@@ -102,6 +102,18 @@ ELA_HOTSPOT_MIN_LEVEL = 2.0          # ... and >= 2 (of 255, before amplificatio
 ELA_HOTSPOT_MAX_FRACTION = 0.5       # hotspots covering > 50% of the frame are not "localised"
 ELA_MAX_INPUTS = 3                   # analyse at most this many images/videos per investigation
 
+# Weather (§6.3, taken over from Adithi). Starting values from the spec; the rules are unchanged.
+WEATHER_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+WEATHER_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
+WEATHER_MAX_PAST_DAYS = 92           # forecast API's past_days limit; anything older -> archive API (ERA5)
+WEATHER_GRID_OFFSET_DEG = 0.15       # N/S/E/W points, about 15 km
+WEATHER_DRY_POINT_MM = 1.0           # (a) centre < 1 mm and (b) grid max < 1 mm ...
+WEATHER_DRY_72H_MM = 5.0             # ... and (c) 72 h < 5 mm -> contradiction
+WEATHER_WET_POINT_MM = 10.0          # (a) >= 10 mm ...
+WEATHER_WET_72H_MM = 30.0            # ... or (c) >= 30 mm -> consistent
+WEATHER_TIMEOUT_S = 8.0              # one request for all 5 points
+WEATHER_FORECAST_CACHE_TTL_S = 3600  # refresh cached forecast data after ~1 h when online; archive is cached forever
+
 # Archive builder (§6.4, scripts/build_archive.py, taken over from Adithi).
 # Hand-edited list of verified clips; the builder adds frame hashes and writes ARCHIVE_JSON.
 # Sampling must match the prior_appearance witness: both use app/media.py with PRIOR_SAMPLE_FPS.
@@ -191,16 +203,7 @@ METADATA_EDITING_SOFTWARE = [
     "premiere", "after effects", "final cut", "davinci", "inshot", "kinemaster",
 ]
 
-# Weather (§6.3)
-WEATHER_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
-WEATHER_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
-WEATHER_RECENT_DAYS = 90             # newer than this -> forecast API with past_days
-WEATHER_PAST_DAYS = 7
-WEATHER_GRID_OFFSET_DEG = 0.15       # N/S/E/W points, about 15 km
-WEATHER_DRY_POINT_MM = 1.0           # (a) centre < 1 mm and (b) grid max < 1 mm ...
-WEATHER_DRY_72H_MM = 5.0             # ... and (c) 72 h < 5 mm -> contradiction
-WEATHER_WET_POINT_MM = 10.0          # (a) >= 10 mm ...
-WEATHER_WET_72H_MM = 30.0            # ... or (c) >= 30 mm -> consistent
+# Weather moved to the Sampurna section (handed over by Adithi).
 
 # Prior appearance (§6.4)
 PRIOR_SAMPLE_FPS = 1.0
