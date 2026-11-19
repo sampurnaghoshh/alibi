@@ -6,7 +6,7 @@ import re
 import shutil
 import subprocess
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -18,9 +18,10 @@ LIMITATIONS = [
     "Metadata can be edited or removed; it is supporting evidence, not ground truth.",
     "Metadata timestamps may reflect copying, exporting, timezone conversion, or device settings rather than the original capture time.",
     "GPS information may be missing, inaccurate, or manually altered.",
+    "Capture timestamps are compared at date precision; exact time-of-day cannot be verified from date-only metadata.",
 ]
 
-EDITING_SOFTWARE = (
+DEFAULT_EDITING_SOFTWARE = (
     "Adobe Photoshop",
     "Adobe Lightroom",
     "Snapseed",
@@ -49,25 +50,37 @@ SOFTWARE_TAGS = (
     "Encoder",
 )
 
+MAKE_TAGS = ("Make", "CameraMake")
+MODEL_TAGS = ("Model", "CameraModelName")
+
+METADATA_FIELD_TAGS = {
+    "capture_date": DATE_TAGS,
+    "gps": ("GPSLatitude", "GPSLongitude"),
+    "make": MAKE_TAGS,
+    "model": MODEL_TAGS,
+    "software": SOFTWARE_TAGS,
+}
+
 
 def _tag_value(data: dict, names: tuple[str, ...]) -> Any:
     """Find a tag by its name, ignoring ExifTool group prefixes."""
-    for wanted in names:
-        for key, value in data.items():
-            if key.split(":")[-1].lower() == wanted.lower():
-                if value not in (None, "", "-", "0000:00:00 00:00:00"):
-                    return value
+    wanted_names = {name.lower() for name in names}
+
+    for key, value in data.items():
+        if key.split(":")[-1].lower() in wanted_names:
+            if value not in (None, "", "-", "0000:00:00 00:00:00"):
+                return value
+
     return None
 
 
 def _all_tag_values(data: dict, names: tuple[str, ...]) -> list[str]:
     """Collect matching metadata values without duplicating identical values."""
+    wanted_names = {name.lower() for name in names}
     found = []
 
     for key, value in data.items():
-        if key.split(":")[-1].lower() in {
-            name.lower() for name in names
-        }:
+        if key.split(":")[-1].lower() in wanted_names:
             if value not in (None, "", "-"):
                 text = str(value).strip()
                 if text and text not in found:
@@ -85,15 +98,15 @@ def _parse_date(value: Any) -> date | None:
     if not text:
         return None
 
-    # Remove EXIF timezone suffixes such as +05:30 where appropriate.
-    candidates = [text]
+    candidates = [
+        text,
+        re.sub(
+            r"^(\d{4}):(\d{2}):(\d{2})",
+            r"\1-\2-\3",
+            text,
+        ),
+    ]
 
-    # EXIF: 2026:11:19 12:30:45
-    candidates.append(
-        re.sub(r"^(\d{4}):(\d{2}):(\d{2})", r"\1-\2-\3", text)
-    )
-
-    # FFprobe and ISO-style timestamps.
     for candidate in candidates:
         candidate = candidate.replace("Z", "+00:00")
 
@@ -236,8 +249,9 @@ def _run_exiftool(file_path: Path) -> dict:
         fallback = Path(r"C:\ExifTool\exiftool.exe")
         executable = str(fallback) if fallback.exists() else "exiftool"
 
+    # -n requests numeric values, including signed GPS coordinates.
     result = _run_command(
-        [executable, "-json", "-G", str(file_path)],
+        [executable, "-n", "-json", "-G", str(file_path)],
         timeout=30,
     )
 
@@ -252,6 +266,11 @@ def _run_exiftool(file_path: Path) -> dict:
             parsed = {}
 
     result["parsed"] = parsed
+    result["executable_found"] = (
+        shutil.which("exiftool") is not None
+        or Path(r"C:\ExifTool\exiftool.exe").exists()
+    )
+
     return result
 
 
@@ -282,6 +301,76 @@ def _run_ffprobe(file_path: Path) -> dict:
 
     result["parsed"] = parsed
     return result
+
+
+def _metadata_fields(exif: dict, capture_date, latitude, longitude, software) -> dict:
+    """Build metadata inventory fields for frontend display."""
+    make = _tag_value(exif, MAKE_TAGS)
+    model = _tag_value(exif, MODEL_TAGS)
+
+    fields_present = []
+    fields_missing = []
+
+    if capture_date:
+        fields_present.append("capture_date")
+    else:
+        fields_missing.append("capture_date")
+
+    if latitude is not None and longitude is not None:
+        fields_present.append("gps")
+    else:
+        fields_missing.append("gps")
+
+    if make:
+        fields_present.append("make")
+    else:
+        fields_missing.append("make")
+
+    if model:
+        fields_present.append("model")
+    else:
+        fields_missing.append("model")
+
+    if software:
+        fields_present.append("software")
+    else:
+        fields_missing.append("software")
+
+    reencode_hints = []
+
+    if software:
+        reencode_hints.extend(software)
+
+    if any(
+        hint.lower() in value.lower()
+        for value in software
+        for hint in (
+            "encoder",
+            "export",
+            "edited",
+            "photoshop",
+            "lightroom",
+            "capcut",
+            "canva",
+            "premiere",
+            "davinci",
+            "final cut",
+            "gimp",
+            "snapseed",
+            "picsart",
+        )
+    ):
+        reencode_hints.append(
+            "Metadata contains software/encoder tags that may indicate processing or re-encoding."
+        )
+
+    return {
+        "fields_present": fields_present,
+        "fields_missing": fields_missing,
+        "make": str(make) if make else None,
+        "model": str(model) if model else None,
+        "reencode_hints": list(dict.fromkeys(reencode_hints)),
+    }
 
 
 def _metadata_for_file(input_ref) -> dict:
@@ -334,9 +423,15 @@ def _metadata_for_file(input_ref) -> dict:
 
     if encoder:
         software_values.append(str(encoder))
-
-    # Keep values unique.
     software_values = list(dict.fromkeys(software_values))
+
+    inventory = _metadata_fields(
+        exif,
+        capture_date,
+        latitude,
+        longitude,
+        software_values,
+    )
 
     return {
         "file_id": input_ref.file_id,
@@ -347,6 +442,7 @@ def _metadata_for_file(input_ref) -> dict:
         "gps_latitude": latitude,
         "gps_longitude": longitude,
         "software": software_values,
+        **inventory,
         "exiftool": exif_result,
         "ffprobe": ffprobe_result,
     }
@@ -356,45 +452,55 @@ def _metadata_for_file(input_ref) -> dict:
 # Claim normalization helpers
 # ---------------------------------------------------------
 
-def _claimed_date(claim) -> date | None:
-    """Get a normalized date from a time claim."""
+def _claimed_window(claim) -> tuple[date | None, date | None, str]:
+    """Get the normalized start/end date window and precision from a time claim."""
     normalized = claim.normalized or {}
 
-    # Current claim format:
-    # normalized = {"date": "...", "start": "...", "end": "..."}
-    value = normalized.get("date")
+    start_value = normalized.get("start")
+    end_value = normalized.get("end")
+    precision = normalized.get("precision", "day")
 
-    if value:
-        parsed = _parse_date(value)
-        if parsed:
-            return parsed
+    if start_value and end_value:
+        try:
+            start = datetime.fromisoformat(
+                str(start_value).replace("Z", "+00:00")
+            ).date()
 
-    # Support older nested format:
-    # normalized = {"time": {"date": "..."}}
+            end = datetime.fromisoformat(
+                str(end_value).replace("Z", "+00:00")
+            ).date()
+
+            # The normalized end is exclusive for day/week/month/year claims.
+            if precision in {"day", "week", "month", "year"}:
+                end -= timedelta(days=1)
+
+            return start, end, precision
+        except (ValueError, TypeError):
+            pass
+
+    # Support older nested format.
     time_data = normalized.get("time", {})
 
     if isinstance(time_data, dict):
         value = time_data.get("date")
-
         if value:
             parsed = _parse_date(value)
             if parsed:
-                return parsed
+                return parsed, parsed, precision
 
-    # Try the claim value if it is date-like.
-    return _parse_date(claim.value)
+    parsed = _parse_date(claim.value)
+    if parsed:
+        return parsed, parsed, precision
+
+    return None, None, precision
 
 
 def _claimed_location(claim) -> tuple[float | None, float | None]:
     """Get normalized coordinates from a location claim."""
     normalized = claim.normalized or {}
 
-    # Current claim format:
-    # normalized = {"lat": ..., "lon": ..., "country": "..."}
     location = normalized
 
-    # Support older nested format:
-    # normalized = {"location": {"lat": ..., "lon": ...}}
     nested_location = normalized.get("location")
 
     if isinstance(nested_location, dict):
@@ -418,6 +524,50 @@ def _claimed_location(claim) -> tuple[float | None, float | None]:
     return lat, lon
 
 
+def _unique_claim_ids(rows: list[dict]) -> list[str]:
+    return list(dict.fromkeys(row["claim_id"] for row in rows))
+
+
+def _date_tolerance_days(precision: str) -> int:
+    """Tolerance for date-only metadata comparisons."""
+    return {
+        "hour": 1,
+        "part_of_day": 1,
+        "day": 1,
+        "week": 2,
+        "month": 2,
+        "year": 2,
+    }.get(precision, 2)
+
+
+def _date_comparison(
+    media_date: date,
+    claimed_start: date,
+    claimed_end: date,
+    precision: str,
+) -> dict:
+    """Compare a capture date to a claimed window, including precision tolerance."""
+    tolerance = _date_tolerance_days(precision)
+
+    if claimed_start <= media_date <= claimed_end:
+        difference = 0
+    elif media_date < claimed_start:
+        difference = (claimed_start - media_date).days
+    else:
+        difference = (media_date - claimed_end).days
+
+    return {
+        "metadata_date": media_date.isoformat(),
+        "claimed_start": claimed_start.isoformat(),
+        "claimed_end": claimed_end.isoformat(),
+        "precision": precision,
+        "difference_days": difference,
+        "threshold_days": tolerance,
+        "within_window": claimed_start <= media_date <= claimed_end,
+        "consistent": difference <= tolerance,
+    }
+
+
 def _artifact_evidence() -> list[dict]:
     return [
         {
@@ -430,7 +580,7 @@ def _artifact_evidence() -> list[dict]:
 
 class MetadataWitness(Witness):
     name = "metadata"
-    label = "Metadata Witness"
+    label = "Metadata"
     implemented = True
 
     def applicable(self, ctx: InvestigationContext) -> bool:
@@ -445,7 +595,6 @@ class MetadataWitness(Witness):
             if item.kind in ("image", "video")
         ]
 
-        # Extract metadata for all supported media.
         extracted = []
 
         for item in media_inputs:
@@ -461,9 +610,13 @@ class MetadataWitness(Witness):
                     "gps_latitude": None,
                     "gps_longitude": None,
                     "software": [],
+                    "fields_present": [],
+                    "fields_missing": list(METADATA_FIELD_TAGS),
+                    "make": None,
+                    "model": None,
+                    "reencode_hints": [],
                 })
 
-        # Save raw output as an investigation artifact.
         raw_path = ctx.artifact_path("metadata_raw.json")
 
         with raw_path.open("w", encoding="utf-8") as handle:
@@ -483,6 +636,32 @@ class MetadataWitness(Witness):
         time_claims = ctx.claims_of("time")
         location_claims = ctx.claims_of("location")
 
+        limitations = list(LIMITATIONS)
+
+        if any(
+            not item.get("exiftool", {}).get("executable_found", False)
+            for item in extracted
+        ):
+            limitations.append("exiftool not found")
+
+        metadata_inventory = [
+            {
+                "file_id": item.get("file_id"),
+                "filename": item.get("filename"),
+                "capture_date": item.get("capture_date"),
+                "gps_latitude": item.get("gps_latitude"),
+                "gps_longitude": item.get("gps_longitude"),
+                "software_tags": item.get("software", []),
+                "fields_present": item.get("fields_present", []),
+                "fields_missing": item.get("fields_missing", []),
+                "make": item.get("make"),
+                "model": item.get("model"),
+                "reencode_hints": item.get("reencode_hints", []),
+                "extraction_error": item.get("error"),
+            }
+            for item in extracted
+        ]
+
         # ---------------------------------------------------------
         # Finding 1: capture date comparison
         # ---------------------------------------------------------
@@ -492,18 +671,18 @@ class MetadataWitness(Witness):
                 if item.get("capture_date")
             ]
 
-            claim_dates = [
-                (claim, _claimed_date(claim))
+            claim_windows = [
+                (claim, *_claimed_window(claim))
                 for claim in time_claims
             ]
 
-            claim_dates = [
-                (claim, parsed)
-                for claim, parsed in claim_dates
-                if parsed is not None
+            claim_windows = [
+                (claim, start, end, precision)
+                for claim, start, end, precision in claim_windows
+                if start is not None and end is not None
             ]
 
-            if not usable_dates or not claim_dates:
+            if not usable_dates or not claim_windows:
                 findings.append(
                     self.finding(
                         status="inconclusive",
@@ -513,34 +692,37 @@ class MetadataWitness(Witness):
                             "A usable capture date or normalized date claim "
                             "was unavailable for comparison."
                         ),
-                        claim_ids=[claim.id for claim in time_claims],
+                        claim_ids=list(dict.fromkeys(
+                            claim.id for claim in time_claims
+                        )),
                         details={
                             "metadata_dates": [
                                 item.get("capture_date")
                                 for item in extracted
                             ],
-                            "claimed_dates": [
-                                str(parsed) if parsed else None
-                                for _, parsed in claim_dates
+                            "claimed_windows": [
+                                {
+                                    "start": start.isoformat(),
+                                    "end": end.isoformat(),
+                                    "precision": precision,
+                                    "claim_id": claim.id,
+                                }
+                                for claim, start, end, precision in claim_windows
                             ],
+                            "files": metadata_inventory,
                         },
                         evidence=artifact_evidence,
                         alternatives=[
                             "Metadata may have been removed or may use an unsupported date field.",
                             "The media may have been exported, copied, or processed.",
                             "The claim may not contain a normalized date.",
+                            "Metadata is commonly stripped by messaging apps and social platforms",
                         ],
-                        limitations=LIMITATIONS,
+                        limitations=limitations,
                         n=1,
                     )
                 )
             else:
-                max_diff = getattr(
-                    config,
-                    "METADATA_MAX_DATE_DIFF_DAYS",
-                    2,
-                )
-
                 comparisons = []
 
                 for item in usable_dates:
@@ -549,78 +731,100 @@ class MetadataWitness(Witness):
                     if not media_date:
                         continue
 
-                    for claim, claimed in claim_dates:
-                        difference = abs((media_date - claimed).days)
+                    file_comparisons = []
 
-                        comparisons.append({
+                    for claim, claimed_start, claimed_end, precision in claim_windows:
+                        comparison = _date_comparison(
+                            media_date,
+                            claimed_start,
+                            claimed_end,
+                            precision,
+                        )
+
+                        comparison.update({
                             "file": item["filename"],
-                            "metadata_date": media_date.isoformat(),
-                            "claimed_date": claimed.isoformat(),
-                            "difference_days": difference,
+                            "file_id": item["file_id"],
                             "claim_id": claim.id,
                         })
 
-                if comparisons:
-                    best = min(
-                        comparisons,
+                        file_comparisons.append(comparison)
+                        comparisons.append(comparison)
+
+                    # Each file is evaluated against all time claims.
+                    closest = min(
+                        file_comparisons,
                         key=lambda row: row["difference_days"],
                     )
 
-                    if best["difference_days"] > max_diff:
-                        findings.append(
-                            self.finding(
-                                status="contradiction",
-                                reliability="medium",
-                                title="Capture date differs from claimed date",
-                                summary=(
-                                    "The available capture date differs from "
-                                    "the claimed date beyond the configured "
-                                    "tolerance."
-                                ),
-                                claim_ids=[
-                                    row["claim_id"] for row in comparisons
+                    item["date_status"] = (
+                        "consistent" if closest["consistent"]
+                        else "contradiction"
+                    )
+
+                contradictory_files = [
+                    item for item in usable_dates
+                    if item.get("date_status") == "contradiction"
+                ]
+
+                if contradictory_files:
+                    findings.append(
+                        self.finding(
+                            status="contradiction",
+                            reliability="medium",
+                            title="Capture date differs from claimed date",
+                            summary=(
+                                "One or more media files have metadata dates "
+                                "outside the claimed time windows and their "
+                                "precision-based tolerances."
+                            ),
+                            claim_ids=list(dict.fromkeys(
+                                row["claim_id"] for row in comparisons
+                            )),
+                            details={
+                                "comparisons": comparisons,
+                                "files": metadata_inventory,
+                                "contradictory_files": [
+                                    item["filename"]
+                                    for item in contradictory_files
                                 ],
-                                details={
-                                    "comparisons": comparisons,
-                                    "threshold_days": max_diff,
-                                },
-                                evidence=artifact_evidence,
-                                alternatives=[
-                                    "The device date or timezone may have been incorrect.",
-                                    "The file may have been exported or copied.",
-                                    "Metadata may have been edited independently of the media.",
-                                ],
-                                limitations=LIMITATIONS,
-                                n=1,
-                            )
+                            },
+                            evidence=artifact_evidence,
+                            alternatives=[
+                                "The device date or timezone may have been incorrect.",
+                                "The file may have been exported or copied.",
+                                "Metadata may have been edited independently of the media.",
+                            ],
+                            limitations=limitations,
+                            n=1,
                         )
-                    else:
-                        findings.append(
-                            self.finding(
-                                status="consistent",
-                                reliability="low",
-                                title="Capture date is consistent with claim",
-                                summary=(
-                                    "The available metadata date is within "
-                                    "the configured tolerance of the "
-                                    "claimed date."
-                                ),
-                                claim_ids=[
-                                    row["claim_id"] for row in comparisons
-                                ],
-                                details={
-                                    "comparisons": comparisons,
-                                    "threshold_days": max_diff,
-                                },
-                                evidence=artifact_evidence,
-                                alternatives=[
-                                    "Matching metadata does not independently establish when the media was captured.",
-                                    "Metadata timestamps may have been altered.",
-                                ],
-                                limitations=LIMITATIONS,
-                                n=1,
-                            )
+                    )
+                else:
+                    findings.append(
+                        self.finding(
+                            status="consistent",
+                            reliability="low",
+                            title="Capture date is consistent with claim",
+                            summary=(
+                                "All files with usable capture dates fall "
+                                "within or sufficiently close to the claimed "
+                                "time windows."
+                            ),
+                            claim_ids=list(dict.fromkeys(
+                                row["claim_id"] for row in comparisons
+                            )),
+                            details={
+                                "comparisons": comparisons,
+                                "files": metadata_inventory,
+                            },
+                            evidence=artifact_evidence,
+                            alternatives=[
+                                "Matching metadata does not independently establish when the media was captured.",
+                                "Metadata timestamps may have been altered.",
+                            ],
+                            limitations=limitations,
+                            n=1,
                         )
+                    )
 
         # ---------------------------------------------------------
         # Finding 2: editing-software metadata tag
@@ -631,12 +835,18 @@ class MetadataWitness(Witness):
             for software in item.get("software", [])
         ))
 
+        editing_software = getattr(
+            config,
+            "METADATA_EDITING_SOFTWARE",
+            DEFAULT_EDITING_SOFTWARE,
+        )
+
         editing_tags = [
             software
             for software in all_software
             if any(
-                known.lower() in software.lower()
-                for known in EDITING_SOFTWARE
+                str(known).lower() in software.lower()
+                for known in editing_software
             )
         ]
 
@@ -653,6 +863,7 @@ class MetadataWitness(Witness):
                     details={
                         "software_tags": editing_tags,
                         "all_software_tags": all_software,
+                        "files": metadata_inventory,
                     },
                     evidence=artifact_evidence,
                     alternatives=[
@@ -660,7 +871,7 @@ class MetadataWitness(Witness):
                         "The tag does not establish that the depicted event or content was altered.",
                         "Software metadata may be incomplete or manually changed.",
                     ],
-                    limitations=LIMITATIONS,
+                    limitations=limitations,
                     n=2,
                 )
             )
@@ -696,7 +907,9 @@ class MetadataWitness(Witness):
                             "GPS metadata or normalized claimed coordinates "
                             "were unavailable for comparison."
                         ),
-                        claim_ids=[claim.id for claim in location_claims],
+                        claim_ids=list(dict.fromkeys(
+                            claim.id for claim in location_claims
+                        )),
                         details={
                             "gps_found": [
                                 {
@@ -706,14 +919,16 @@ class MetadataWitness(Witness):
                                 }
                                 for item in gps_files
                             ],
+                            "files": metadata_inventory,
                         },
                         evidence=artifact_evidence,
                         alternatives=[
                             "The media may not contain GPS metadata.",
                             "Location metadata may have been removed during export.",
                             "The location claim may not include normalized coordinates.",
+                            "Metadata is commonly stripped by messaging apps and social platforms",
                         ],
-                        limitations=LIMITATIONS,
+                        limitations=limitations,
                         n=3,
                     )
                 )
@@ -727,6 +942,8 @@ class MetadataWitness(Witness):
                 comparisons = []
 
                 for item in gps_files:
+                    file_comparisons = []
+
                     for claim, claimed_lat, claimed_lon in valid_claims:
                         distance = _distance_km(
                             item["gps_latitude"],
@@ -735,96 +952,103 @@ class MetadataWitness(Witness):
                             claimed_lon,
                         )
 
-                        comparisons.append({
+                        comparison = {
                             "file": item["filename"],
+                            "file_id": item["file_id"],
                             "metadata_latitude": item["gps_latitude"],
                             "metadata_longitude": item["gps_longitude"],
                             "claimed_latitude": claimed_lat,
                             "claimed_longitude": claimed_lon,
                             "distance_km": round(distance, 3),
+                            "threshold_km": max_distance,
+                            "consistent": distance <= max_distance,
                             "claim_id": claim.id,
-                        })
+                        }
 
-                if comparisons:
-                    best = min(
-                        comparisons,
+                        file_comparisons.append(comparison)
+                        comparisons.append(comparison)
+
+                    closest = min(
+                        file_comparisons,
                         key=lambda row: row["distance_km"],
                     )
 
-                    if best["distance_km"] > max_distance:
-                        findings.append(
-                            self.finding(
-                                status="contradiction",
-                                reliability="medium",
-                                title="GPS location differs from claimed location",
-                                summary=(
-                                    "The embedded GPS coordinates are farther "
-                                    "from the claimed location than the "
-                                    "configured distance tolerance."
-                                ),
-                                claim_ids=[
-                                    row["claim_id"] for row in comparisons
+                    item["gps_status"] = (
+                        "consistent" if closest["consistent"]
+                        else "contradiction"
+                    )
+
+                contradictory_files = [
+                    item for item in gps_files
+                    if item.get("gps_status") == "contradiction"
+                ]
+
+                if contradictory_files:
+                    findings.append(
+                        self.finding(
+                            status="contradiction",
+                            reliability="medium",
+                            title="GPS location differs from claimed location",
+                            summary=(
+                                "One or more media files have GPS "
+                                "coordinates beyond the configured "
+                                "distance tolerance from the claimed location."
+                            ),
+                            claim_ids=list(dict.fromkeys(
+                                row["claim_id"] for row in comparisons
+                            )),
+                            details={
+                                "comparisons": comparisons,
+                                "threshold_km": max_distance,
+                                "contradictory_files": [
+                                    item["filename"]
+                                    for item in contradictory_files
                                 ],
-                                details={
-                                    "comparisons": comparisons,
-                                    "threshold_km": max_distance,
-                                },
-                                evidence=artifact_evidence,
-                                alternatives=[
-                                    "GPS may have been inaccurate or recorded at another point.",
-                                    "The media may have been copied from another device or location.",
-                                    "The metadata may have been changed.",
-                                ],
-                                limitations=LIMITATIONS,
-                                n=3,
-                            )
+                                "files": metadata_inventory,
+                            },
+                            evidence=artifact_evidence,
+                            alternatives=[
+                                "GPS may have been inaccurate or recorded at another point.",
+                                "The media may have been copied from another device or location.",
+                                "The metadata may have been changed.",
+                            ],
+                            limitations=limitations,
+                            n=3,
                         )
-                    else:
-                        findings.append(
-                            self.finding(
-                                status="consistent",
-                                reliability="low",
-                                title="GPS location is consistent with claim",
-                                summary=(
-                                    "Available GPS metadata is within the "
-                                    "configured distance tolerance of the "
-                                    "claimed location."
-                                ),
-                                claim_ids=[
-                                    row["claim_id"] for row in comparisons
-                                ],
-                                details={
-                                    "comparisons": comparisons,
-                                    "threshold_km": max_distance,
-                                },
-                                evidence=artifact_evidence,
-                                alternatives=[
-                                    "GPS metadata may have been edited or copied.",
-                                    "Coordinates do not establish the identity of people or the event depicted.",
-                                ],
-                                limitations=LIMITATIONS,
-                                n=3,
-                            )
+                    )
+                else:
+                    findings.append(
+                        self.finding(
+                            status="consistent",
+                            reliability="low",
+                            title="GPS location is consistent with claim",
+                            summary=(
+                                "All files with usable GPS metadata are "
+                                "within the configured distance tolerance "
+                                "of at least one claimed location."
+                            ),
+                            claim_ids=list(dict.fromkeys(
+                                row["claim_id"] for row in comparisons
+                            )),
+                            details={
+                                "comparisons": comparisons,
+                                "threshold_km": max_distance,
+                                "files": metadata_inventory,
+                            },
+                            evidence=artifact_evidence,
+                            alternatives=[
+                                "GPS metadata may have been edited or copied.",
+                                "Coordinates do not establish the identity of people or the event depicted.",
+                            ],
+                            limitations=limitations,
+                            n=3,
                         )
+                    )
 
         # ---------------------------------------------------------
         # General inventory finding if no date or location was checked
         # ---------------------------------------------------------
         if not time_claims and not location_claims:
-            metadata_inventory = [
-                {
-                    "filename": item.get("filename"),
-                    "capture_date": item.get("capture_date"),
-                    "gps_present": (
-                        item.get("gps_latitude") is not None
-                        and item.get("gps_longitude") is not None
-                    ),
-                    "software_tags": item.get("software", []),
-                    "extraction_error": item.get("error"),
-                }
-                for item in extracted
-            ]
-
             findings.append(
                 self.finding(
                     status="inconclusive",
@@ -842,15 +1066,15 @@ class MetadataWitness(Witness):
                     alternatives=[
                         "Metadata fields may be absent from the original media.",
                         "Metadata may reflect processing or export rather than capture.",
+                        "Metadata is commonly stripped by messaging apps and social platforms",
                     ],
-                    limitations=LIMITATIONS,
+                    limitations=limitations,
                     n=1,
                 )
             )
 
         elapsed_ms = int((time.perf_counter() - started) * 1000)
 
-        # Update elapsed time for each finding.
         for finding in findings:
             finding.elapsed_ms = elapsed_ms
 
