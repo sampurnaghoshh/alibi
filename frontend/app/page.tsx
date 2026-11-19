@@ -10,6 +10,13 @@ import {
   type DemoCase,
 } from "@/lib/api";
 
+/** Today's date in the browser's own time zone, as YYYY-MM-DD (what <input type="date"> uses). */
+function localToday(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 export default function Home() {
   const router = useRouter();
   const fileInput = useRef<HTMLInputElement>(null);
@@ -23,6 +30,12 @@ export default function Home() {
   const [error, setError] = useState("");
   const [dragging, setDragging] = useState(false);
   const [demoError, setDemoError] = useState("");
+
+  // Default "Shared on" to today. Set after mount: this page is pre-rendered at build time, so a
+  // value computed during rendering would be the build date.
+  useEffect(() => {
+    setSharedOn((current) => current || localToday());
+  }, []);
 
   useEffect(() => {
     getDemoCases()
@@ -56,11 +69,12 @@ export default function Home() {
     setLoading(true);
 
     try {
-      const postedAt = new Date(`${sharedOn}T12:00:00`).toISOString();
+      // Send the date exactly as picked ("2026-11-19"): the backend resolves relative times
+      // ("yesterday evening") in IST. new Date(...).toISOString() would turn it into UTC.
       const investigation = await uploadInvestigation(
         files,
         caption.trim(),
-        postedAt
+        sharedOn
       );
 
       router.push(`/investigation/${investigation.id}`);
@@ -156,13 +170,13 @@ export default function Home() {
                 <span className="text-[#83B6D1]">browse</span>
               </p>
               <p className="mt-2 text-xs text-zinc-500">
-                Images and videos supported
+                Images, video and audio supported
               </p>
               <input
                 ref={fileInput}
                 type="file"
                 multiple
-                accept="image/*,video/*"
+                accept="image/*,video/*,audio/*"
                 className="hidden"
                 onChange={(event) => {
                   if (event.target.files) addFiles(event.target.files);

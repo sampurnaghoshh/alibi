@@ -1,8 +1,34 @@
-
-import { getInvestigation } from "@/lib/api";
+import { getInvestigationState } from "@/lib/api";
 import Link from "next/link";
+import { notFound } from "next/navigation";
+import { AudioWaveform, CloudRain, FileSearch, History, ScanEye, Zap, type LucideIcon } from "lucide-react";
 import EvidenceGraph from "./EvidenceGraph";
+import StillRunning from "./StillRunning";
 import { statusStyles, statusLabels } from "@/lib/status";
+
+// Same witness icons as the Live Desk (backend/app/live/static/live.js).
+const WITNESS_ICON: Record<string, LucideIcon> = {
+  metadata: FileSearch,
+  weather: CloudRain,
+  prior_appearance: History,
+  lipsync: AudioWaveform,
+  enf: Zap,
+  ela: ScanEye,
+};
+
+function Problem({ title, message }: { title: string; message: string }) {
+  return (
+    <main className="min-h-screen bg-[#0D1012] text-zinc-100">
+      <div className="mx-auto max-w-xl px-6 py-32 text-center">
+        <h1 className="text-2xl font-semibold">{title}</h1>
+        <p className="mt-3 text-sm leading-6 text-zinc-400">{message}</p>
+        <Link href="/" className="mt-8 inline-block text-sm text-[#83B6D1] hover:text-[#9CC8DF]">
+          New investigation
+        </Link>
+      </div>
+    </main>
+  );
+}
 
 export default async function InvestigationPage({
   params,
@@ -10,8 +36,15 @@ export default async function InvestigationPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const investigation = await getInvestigation(id);
+  const state = await getInvestigationState(id);
+  if (state.status === "running") return <StillRunning id={id} />;   // 202: poll until done
+  if (state.status === "missing") notFound();
+  if (state.status === "error") {
+    return <Problem title="This investigation could not be shown" message={state.message} />;
+  }
+  const investigation = state.investigation;
   const { assessment, findings, claims, inputs } = investigation;
+  const priority = assessment.human_review === "priority";
 
 const caption = investigation.caption;
 
@@ -62,13 +95,13 @@ if (lastEnd < caption.length) {
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-5">
           <div>
             <Link href="/" className="text-2xl font-bold tracking-[0.25em]">
-              ALIBI<span className="text-cyan-400">.</span>
+              ALIBI<span className="text-[#83B6D1]">.</span>
             </Link>
             <p className="mt-1 text-xs tracking-widest text-zinc-500">
               INVESTIGATION REPORT
             </p>
           </div>
-          <Link href="/" className="text-sm text-cyan-400 hover:text-cyan-300">
+          <Link href="/" className="text-sm text-[#83B6D1] hover:text-[#9CC8DF]">
             Back to dashboard
           </Link>
         </div>
@@ -76,12 +109,12 @@ if (lastEnd < caption.length) {
 
       <div className="mx-auto max-w-7xl space-y-8 px-6 py-8">
         <section>
-          <p className="mb-3 text-xs font-semibold tracking-[0.2em] text-red-400">
+          <p className={`mb-3 text-xs font-semibold tracking-[0.2em] ${priority ? "text-[#D96B68]" : "text-zinc-400"}`}>
            {assessment.human_review === "priority"
   ? "PRIORITY HUMAN REVIEW"
   : "STANDARD HUMAN REVIEW"}
           </p>
-          <div className="rounded-xl border border-red-500/20 bg-[#15191D] p-6">
+          <div className={`rounded-xl border bg-[#15191D] p-6 ${priority ? "border-[#D96B68]/25" : "border-white/10"}`}>
             <p className="text-xs tracking-widest text-zinc-500">
               INVESTIGATION ASSESSMENT
             </p>
@@ -105,7 +138,7 @@ if (lastEnd < caption.length) {
       part.highlighted ? (
         <mark
           key={index}
-          className="rounded bg-cyan-400/20 px-1 text-cyan-300 underline decoration-cyan-400/60 underline-offset-4"
+          className="rounded bg-[#83B6D1]/15 px-1 text-[#9CC8DF] underline decoration-[#83B6D1]/60 underline-offset-4"
         >
           {part.text}
         </mark>
@@ -197,7 +230,11 @@ if (lastEnd < caption.length) {
                 className="rounded-xl border border-white/10 bg-[#131720] p-5"
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-xs font-semibold uppercase tracking-widest text-zinc-400">
+                  <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-zinc-400">
+                    {(() => {
+                      const Icon = WITNESS_ICON[finding.witness];
+                      return Icon ? <Icon className="h-4 w-4 text-zinc-500" aria-hidden="true" /> : null;
+                    })()}
                     {finding.witness.replaceAll("_", " ")}
                   </span>
                   <span
@@ -216,7 +253,7 @@ if (lastEnd < caption.length) {
                 </p>
 
 <details className="mt-4 rounded-lg border border-white/10 bg-[#0d1017] p-4">
-  <summary className="cursor-pointer text-sm font-medium text-cyan-400">
+  <summary className="cursor-pointer text-sm font-medium text-[#83B6D1]">
     Why? View evidence and limitations
   </summary>
 

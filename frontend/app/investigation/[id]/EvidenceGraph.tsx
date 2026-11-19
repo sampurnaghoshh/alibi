@@ -152,7 +152,8 @@ export default function EvidenceGraph({ graph }: { graph: Graph }) {
 
       <div className="flex flex-wrap gap-5 border-t border-white/10 px-5 py-3 text-[11px] text-zinc-400">
         <span>— Derived from</span>
-        <span className="text-red-400">— Contradicts</span>
+        <span className="text-[#D96B68]">— Contradicts</span>
+        <span className="text-[#69B88A]">— Supports</span>
         <span>┄ Inconclusive</span>
       </div>
     </section>

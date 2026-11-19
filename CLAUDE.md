@@ -49,10 +49,10 @@ ALIBI treats each kind of evidence (caption text, metadata, weather records, ear
 
 | Person | AI tools | Owns | Files |
 |---|---|---|---|
-| **Sampurna** (lead) | Claude Code (Opus) in VS Code | Repo skeleton, **evidence contract**, **rule engine**, graph builder, FastAPI app, storage, report, integration, final merges, **claim extraction** + LLM client (taken over from Nooman), **weather witness**, **ELA witness** and **archive builder** (taken over from Adithi), **Live Desk** (§14) | `backend/app/live/*` (incl. the standalone page in `backend/app/live/static/`), `backend/app/bot/*`, `backend/app/main.py`, `schemas.py`, `engine/*`, `storage.py`, `report.py`, `pipeline.py`, `media.py`, `uploads.py`, `demo.py`, `claims/*`, `shared/*`, `witnesses/weather.py`, `witnesses/ela.py`, `scripts/build_archive.py`, `scripts/warm_cache.py` |
+| **Sampurna** (lead) | Claude Code (Opus) in VS Code | Repo skeleton, **evidence contract**, **rule engine**, graph builder, FastAPI app, storage, report, integration, final merges, **claim extraction** + LLM client (taken over from Nooman), **weather witness**, **ELA witness** and **archive builder** (taken over from Adithi), **Live Desk** (§14), **frontend** (taken over from Dhruva after his upload page and investigation view were merged) | `frontend/*`, `backend/app/live/*` (incl. the standalone page in `backend/app/live/static/`), `backend/app/bot/*`, `backend/app/main.py`, `schemas.py`, `engine/*`, `storage.py`, `report.py`, `pipeline.py`, `media.py`, `uploads.py`, `demo.py`, `claims/*`, `shared/*`, `witnesses/weather.py`, `witnesses/ela.py`, `scripts/build_archive.py`, `scripts/warm_cache.py` |
 | **Nooman** | Claude Code (Opus) in VS Code | **Lip-sync witness**, **ENF audio witness** (conditional), calibration scripts | `witnesses/lipsync.py`, `witnesses/enf.py`, `scripts/calibrate_*.py`, `scripts/test_enf.py` |
 | **Adithi** | Free LLMs | **Metadata witness**, **prior-appearance witness** | `witnesses/metadata.py`, `witnesses/prior_appearance.py` |
-| **Dhruva** | Free LLMs | **Entire frontend**: upload page, investigation dashboard, contradiction graph, witness cards, evidence drawer, report view, demo polish (the Live Desk page is not part of it; it lives in the backend, §14) | `frontend/*` |
+| **Dhruva** | Free LLMs | Built the frontend (upload page, investigation view, evidence graph); **handed over to Sampurna** on 20 Nov. Message Sampurna for frontend changes. | none |
 
 **Rule:** don't edit files you don't own. Need a change elsewhere? Message the owner. Contract changes (`schemas.py`, `shared/contract.schema.json`, `shared/fixtures/*`) are made **only by Sampurna** and announced in the group.
 
@@ -575,7 +575,7 @@ Stand-up every 3 hours (5 min): done / next / blocked.
 
 ## 14. Live Desk (wow layer; approved by Sampurna, owned entirely by Sampurna)
 
-A live, end-to-end show of the whole system during the pitch, built on the same pipeline, contract and rules. It is an exception to the feature freeze in §2.8, approved by the team lead. **Owner:** Sampurna. **Files:** `backend/app/live/*` (the engine, and the standalone page in `backend/app/live/static/`), `backend/app/bot/*`. The Live Desk page is served by the backend at `GET /live` and does not use or touch `frontend/` (Dhruva's Next.js app), so the two never block each other.
+A live, end-to-end show of the whole system during the pitch, built on the same pipeline, contract and rules. It is an exception to the feature freeze in §2.8, approved by the team lead. **Owner:** Sampurna. **Files:** `backend/app/live/*` (the engine, and the standalone page in `backend/app/live/static/`), `backend/app/bot/*`. The Live Desk page is served by the backend at `GET /live` and does not use or touch `frontend/` (the Next.js app), so the two never block each other.
 
 ### The flow
 1. **A judge sends a video to the ALIBI Telegram bot as a FILE** (document), with a caption. Sending it as a file matters: Telegram re-compresses videos sent as "video", which would change the original. The bot stores what it received (SHA-256, read-only, §2.6).

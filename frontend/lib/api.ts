@@ -2,9 +2,43 @@
 import type { Investigation } from "./types";
 import fixture from "../../shared/fixtures/sample_investigation.json";
 
-const API_URL = (
+export const API_URL = (
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 ).replace(/\/$/, "");
+
+/** What GET /api/investigations/{id} said: a finished run, still running (202), not found, or an error. */
+export type InvestigationState =
+  | { status: "done"; investigation: Investigation }
+  | { status: "running" }
+  | { status: "missing"; message: string }
+  | { status: "error"; message: string };
+
+export async function getInvestigationState(id: string): Promise<InvestigationState> {
+  let response: Response;
+  try {
+    response = await fetch(
+      `${API_URL}/api/investigations/${encodeURIComponent(id)}`,
+      { cache: "no-store" }
+    );
+  } catch {
+    if (id === fixtureInvestigation.id) {
+      return { status: "done", investigation: fixtureInvestigation };
+    }
+    return { status: "error", message: `The ALIBI API at ${API_URL} could not be reached.` };
+  }
+
+  if (response.status === 202) return { status: "running" };   // async run still in progress
+  if (response.ok) {
+    return { status: "done", investigation: (await response.json()) as Investigation };
+  }
+  if (response.status === 404) {
+    if (id === fixtureInvestigation.id) {
+      return { status: "done", investigation: fixtureInvestigation };
+    }
+    return { status: "missing", message: await readError(response) };
+  }
+  return { status: "error", message: await readError(response) };
+}
 
 const fixtureInvestigation = fixture as Investigation;
 
@@ -59,8 +93,10 @@ export async function uploadInvestigation(
 ): Promise<Investigation> {
   const formData = new FormData();
 
-  files.forEach((file) => formData.append("files[]", file));
+  files.forEach((file) => formData.append("files", file));    // one "files" part per file
   formData.append("caption", caption);
+  // A plain date ("2026-11-19") lets the backend resolve "yesterday evening" in IST; an ISO string
+  // with "Z" would move every relative time to UTC.
   formData.append("posted_at", postedAt);
 
   const response = await fetch(`${API_URL}/api/investigations`, {
