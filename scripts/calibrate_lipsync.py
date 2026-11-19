@@ -16,6 +16,7 @@ corr at the clip's lag) and <out>/calibration.json with all numbers.
 
 Run (from the repo root):
     backend\\.venv\\Scripts\\python.exe scripts\\calibrate_lipsync.py --genuine C:\\Users\\mnoom\\alibi-media\\enf --swapped C:\\Users\\mnoom\\alibi-media\\enf\\swapped
+    ... --fps 15        (try another analysis fps for one run, without editing config.py)
 """
 
 from __future__ import annotations
@@ -179,7 +180,11 @@ def main() -> int:
     ap.add_argument("--genuine", type=Path, required=True, help="folder of genuine clips")
     ap.add_argument("--swapped", type=Path, default=None, help="folder of mismatched audio/video controls")
     ap.add_argument("--out", type=Path, default=None, help="plots folder (default <genuine>/lipsync_calibration)")
+    ap.add_argument("--fps", type=float, default=None,
+                    help="try another analysis fps for this run only (config.LIPSYNC_ANALYSIS_FPS is not changed)")
     args = ap.parse_args()
+    if args.fps:
+        config.LIPSYNC_ANALYSIS_FPS = args.fps   # in-process only, to compare before changing config.py
 
     groups = [("genuine", args.genuine)] + ([("swapped", args.swapped)] if args.swapped else [])
     out = args.out or args.genuine / "lipsync_calibration"
@@ -187,6 +192,9 @@ def main() -> int:
     for old in out.glob("*_lipsync.png"):
         old.unlink()
     sys.stdout.reconfigure(encoding="utf-8")
+    fps = config.LIPSYNC_ANALYSIS_FPS
+    print(f"analysis: {fps:g} fps (lag step {1000 / fps:.0f} ms), {config.LIPSYNC_FRAME_WIDTH} px wide, "
+          f"lag search +/-{config.LIPSYNC_MAX_LAG_S} s\n")
 
     hdr = (f"{'group':<8}{'clip':<20}{'face':>5}{'faceH':>6}{'spch':>5} |"
            f"{'ap lag':>7}{'ap r':>7}{'ap prom':>8} |{'vel lag':>8}{'vel r':>7}{'vel prom':>9} |{'secs':>5}  status [{config.LIPSYNC_MOUTH_FEATURE}]")

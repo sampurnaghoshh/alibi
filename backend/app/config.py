@@ -170,7 +170,8 @@ LIPSYNC_MIN_FACE_FRACTION = 0.50     # face detected in >= 50% of sampled frames
 LIPSYNC_SMOOTH_FRAMES = 3            # median filter on mouth aperture
 LIPSYNC_MAX_GAP_FRAMES = 5           # interpolate face dropouts up to 5 frames; longer stay missing
 LIPSYNC_ANALYSIS_FPS = 30.0          # constant analysis rate (iPhone ~29.83 fps VFR); +/-0.3 s = +/-9 frames
-LIPSYNC_FRAME_MAX_SIDE = 960         # downscale 4K before landmarking (1920 tested: same numbers, slower)
+LIPSYNC_FRAME_WIDTH = 640            # ffmpeg scales to 640 px wide while decoding (scale=640:-2, never upscaled);
+                                     # 960 and 1920 gave the same numbers, only slower
 LIPSYNC_MAX_LAG_S = 0.30             # clip-level cross-correlation search range +/-
 LIPSYNC_MIN_SPEECH_S = 2.0           # need >= 2 s of speech frames with a face, else insufficient_signal
 # Audio: speech-band loudness in dB.

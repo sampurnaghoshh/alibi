@@ -5,10 +5,11 @@ Runner time limit: 90 s.
 Analysis (shared with scripts/calibrate_lipsync.py, so calibration and witness see the same numbers):
   1. probe_media():    rotation, start times, audio presence (ffprobe).
   2. mouth_series():   ffmpeg decodes frames (auto-rotated upright, resampled to a constant
-                       LIPSYNC_ANALYSIS_FPS, downscaled) -> MediaPipe FaceLandmarker ->
+                       LIPSYNC_ANALYSIS_FPS, scaled to LIPSYNC_FRAME_WIDTH while decoding) ->
+                       MediaPipe FaceLandmarker (VIDEO mode, tracks between frames) ->
                        mouth aperture = inner-lip gap (13-14) / face height (10-152), median-smoothed.
                        mouth_features(): aperture, or velocity = |frame-to-frame change| (config picks one).
-  3. audio_loudness(): ffmpeg mono 16 kHz -> band-pass 300-3000 Hz -> RMS in dB, at the frame times.
+  3. audio_loudness(): ffmpeg mono 16 kHz -> band-pass 300-3000 Hz -> RMS in dB (numpy), at the frame times.
   4. speech_mask():    adaptive threshold between the dB noise floor and peak.
   5. clip_sync():      ONE lag per clip over all speech frames, +/- 0.3 s: best lag, corr, and peak
                        prominence (best corr - median corr over lags). lag > 0 = audio after the mouth.
@@ -118,20 +119,23 @@ def probe_media(path: Path) -> MediaProbe:
 # 2. Mouth aperture
 # ---------------------------------------------------------------------------
 
-def _analysis_size(probe: MediaProbe, max_side: int) -> tuple[int, int]:
-    """Upright size scaled so the long side <= max_side, both even (ffmpeg/yuv friendly)."""
+def _analysis_size(probe: MediaProbe, width: int) -> tuple[int, int]:
+    """Upright size at `width` px wide (never upscaled), height keeping the aspect ratio, both even.
+    Same result as ffmpeg's scale=<width>:-2; computed here because the pipe reader needs the frame size."""
     w, h = probe.upright_size
-    scale = min(1.0, max_side / max(w, h))
+    scale = min(1.0, width / w)
     return max(2, int(round(w * scale / 2)) * 2), max(2, int(round(h * scale / 2)) * 2)
 
 
-def iter_frames(path: Path, probe: MediaProbe, fps: float, max_side: int):
-    """Yield upright RGB frames (H, W, 3) at a constant `fps`.
+def iter_frames(path: Path, probe: MediaProbe, fps: float, width: int):
+    """Yield upright RGB frames (H, W, 3) at a constant `fps`, `width` px wide.
 
+    ffmpeg resamples to `fps` and scales while decoding, so Python never sees full-size 4K frames, and
+    it decodes in its own process while MediaPipe consumes the pipe (the two overlap).
     ffmpeg applies the container's display rotation itself (autorotate is on by default and
     runs before our filters), so portrait iPhone clips come out upright, not sideways.
     """
-    w, h = _analysis_size(probe, max_side)
+    w, h = _analysis_size(probe, width)
     cmd = [
         "ffmpeg", "-v", "error", "-i", str(path), "-an",
         "-vf", f"fps={fps},scale={w}:{h}",
@@ -241,19 +245,19 @@ def _nan_medfilt(x: np.ndarray, k: int) -> np.ndarray:
 
 
 def mouth_series(path: Path, probe: MediaProbe, fps: Optional[float] = None,
-                 max_side: Optional[int] = None, model_path: Optional[Path] = None) -> MouthSeries:
+                 width: Optional[int] = None, model_path: Optional[Path] = None) -> MouthSeries:
     """Mouth aperture per frame. Defaults are read from config at call time (tests can monkeypatch)."""
     import mediapipe as mp  # noqa: PLC0415
 
     fps = fps or config.LIPSYNC_ANALYSIS_FPS
-    max_side = max_side or config.LIPSYNC_FRAME_MAX_SIDE
+    width = width or config.LIPSYNC_FRAME_WIDTH
     model_path = model_path or config.LIPSYNC_FACE_MODEL
-    size = _analysis_size(probe, max_side)
+    size = _analysis_size(probe, width)
     raw: list[float] = []
     heights: list[float] = []
     first_frame, first_pts = None, None
     with _landmarker(model_path) as lm:
-        for i, frame in enumerate(iter_frames(path, probe, fps, max_side)):
+        for i, frame in enumerate(iter_frames(path, probe, fps, width)):
             image = mp.Image(image_format=mp.ImageFormat.SRGB, data=np.ascontiguousarray(frame))
             res = lm.detect_for_video(image, int(round(i * 1000.0 / fps)))
             if res.face_landmarks:
@@ -306,7 +310,6 @@ def load_audio(path: Path, sr: Optional[int] = None) -> np.ndarray:
 
 def loudness_db(y: np.ndarray, sr: int) -> tuple[np.ndarray, np.ndarray]:
     """Speech-band loudness: band-pass LIPSYNC_BAND_HZ, RMS, dB. Returns (times_s, dB) at the RMS hop."""
-    import librosa  # noqa: PLC0415
     from scipy.signal import butter, sosfiltfilt  # noqa: PLC0415
 
     lo, hi = config.LIPSYNC_BAND_HZ
@@ -315,9 +318,23 @@ def loudness_db(y: np.ndarray, sr: int) -> tuple[np.ndarray, np.ndarray]:
         y = sosfiltfilt(sos, y).astype(np.float32)
     hop = int(round(config.LIPSYNC_RMS_HOP_S * sr))
     frame = int(round(config.LIPSYNC_RMS_FRAME_S * sr))
-    rms = librosa.feature.rms(y=y, frame_length=frame, hop_length=hop, center=True)[0]
+    rms = frame_rms(y, frame, hop)
     db = 20.0 * np.log10(np.maximum(rms, 10 ** (config.LIPSYNC_DB_FLOOR / 20.0)))
-    return librosa.frames_to_time(np.arange(len(db)), sr=sr, hop_length=hop), db
+    return np.arange(len(db)) * hop / sr, db
+
+
+def frame_rms(y: np.ndarray, frame: int, hop: int) -> np.ndarray:
+    """Centered frame RMS, same as librosa.feature.rms(center=True, pad_mode="constant").
+
+    Plain numpy (running sum of squares): librosa's first call costs ~3 s of JIT warm-up per process.
+    """
+    pad = frame // 2
+    ypad = np.pad(y.astype(np.float64), pad)
+    n = 1 + max(0, (len(ypad) - frame) // hop)
+    csum = np.concatenate(([0.0], np.cumsum(ypad * ypad)))
+    starts = np.arange(n) * hop
+    energy = np.maximum(csum[starts + frame] - csum[starts], 0.0)
+    return np.sqrt(energy / frame)
 
 
 def audio_loudness(path: Path, probe: MediaProbe, t: np.ndarray) -> np.ndarray:
