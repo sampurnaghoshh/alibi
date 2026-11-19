@@ -49,10 +49,10 @@ ALIBI treats each kind of evidence (caption text, metadata, weather records, ear
 
 | Person | AI tools | Owns | Files |
 |---|---|---|---|
-| **Sampurna** (lead) | Claude Code (Opus) in VS Code | Repo skeleton, **evidence contract**, **rule engine**, graph builder, FastAPI app, storage, report, integration, final merges, **claim extraction** + LLM client (taken over from Nooman), **weather witness**, **ELA witness** and **archive builder** (taken over from Adithi), **Live Desk** (§14) | `backend/app/live/*`, `backend/app/bot/*`, `frontend/app/live/*`, `backend/app/main.py`, `schemas.py`, `engine/*`, `storage.py`, `report.py`, `pipeline.py`, `media.py`, `uploads.py`, `demo.py`, `claims/*`, `shared/*`, `witnesses/weather.py`, `witnesses/ela.py`, `scripts/build_archive.py`, `scripts/warm_cache.py` |
+| **Sampurna** (lead) | Claude Code (Opus) in VS Code | Repo skeleton, **evidence contract**, **rule engine**, graph builder, FastAPI app, storage, report, integration, final merges, **claim extraction** + LLM client (taken over from Nooman), **weather witness**, **ELA witness** and **archive builder** (taken over from Adithi), **Live Desk** (§14) | `backend/app/live/*` (incl. the standalone page in `backend/app/live/static/`), `backend/app/bot/*`, `backend/app/main.py`, `schemas.py`, `engine/*`, `storage.py`, `report.py`, `pipeline.py`, `media.py`, `uploads.py`, `demo.py`, `claims/*`, `shared/*`, `witnesses/weather.py`, `witnesses/ela.py`, `scripts/build_archive.py`, `scripts/warm_cache.py` |
 | **Nooman** | Claude Code (Opus) in VS Code | **Lip-sync witness**, **ENF audio witness** (conditional), calibration scripts | `witnesses/lipsync.py`, `witnesses/enf.py`, `scripts/calibrate_*.py`, `scripts/test_enf.py` |
 | **Adithi** | Free LLMs | **Metadata witness**, **prior-appearance witness** | `witnesses/metadata.py`, `witnesses/prior_appearance.py` |
-| **Dhruva** | Free LLMs | **Entire frontend** except the Live Desk page: upload page, investigation dashboard, contradiction graph, witness cards, evidence drawer, report view, demo polish | `frontend/*` except `frontend/app/live/*` |
+| **Dhruva** | Free LLMs | **Entire frontend**: upload page, investigation dashboard, contradiction graph, witness cards, evidence drawer, report view, demo polish (the Live Desk page is not part of it; it lives in the backend, §14) | `frontend/*` |
 
 **Rule:** don't edit files you don't own. Need a change elsewhere? Message the owner. Contract changes (`schemas.py`, `shared/contract.schema.json`, `shared/fixtures/*`) are made **only by Sampurna** and announced in the group.
 
@@ -253,7 +253,11 @@ All thresholds below are **starting values. Calibrate them on genuine clips** an
 - Tools: `exiftool -json -G` (subprocess) for images and video; `ffprobe -v quiet -print_format json -show_format -show_streams` for video/audio.
 - Report: fields present/missing (CreateDate, GPS, Make/Model, Software, encoder), editing-software tags (Photoshop, Snapseed, CapCut, etc.), re-encode hints (WhatsApp-style names, missing camera fields, `encoder=Lavf`).
 - Rules:
-  - Capture date present **and** differs from the claimed date by > 2 days → `contradiction` (medium).
+  - **Capture time** (done; finished by Sampurna with Adithi's agreement, Adithi stays the owner). It's compared as a full datetime against the claim's `[start, end]` (week/month claims use the whole window):
+    - Source, best first: `Keys:CreationDate` (local time + offset) → image `DateTimeOriginal` + `OffsetTimeOriginal` → `QuickTime:CreateDate` (UTC by the QuickTime spec) → ffprobe `creation_time` (UTC) → any date without an offset.
+    - Time zone known: inside the window ±`METADATA_TIME_MARGIN_HOURS` (12) → `consistent` (low); further outside → `contradiction` (medium).
+    - Time zone unknown: inside the window → `consistent` (low); outside but within `METADATA_MAX_DATE_DIFF_DAYS` (2) → `inconclusive`; further → `contradiction` (medium).
+    - `details.files[]` has each file's `date_status` / `gps_status`, `capture_time`, `capture_source`, `fields_present`, `fields_missing`, `make`, `model`, `reencode_hints`. exiftool runs as `-n -G1` (signed GPS, Composite tags preferred); `"exiftool not found"` is a limitation whenever it's missing.
   - GPS present **and** > 50 km from the claimed location → `contradiction` (medium).
   - Present and matching → `consistent` (low; metadata is easy to edit).
   - Missing → `inconclusive` with alternative "metadata is commonly stripped by messaging apps and social platforms".
@@ -473,6 +477,29 @@ Never say **fake / real / authentic / proven / definitely / AI-generated**.
 
 Visual style: dark investigation-room theme, monospace for numbers and hashes, clean cards, one accent colour per status. It should feel like a forensic tool, not a toy.
 
+### ALIBI design system (shared by the Live Desk and the frontend)
+The look is a premium forensic case file, not a generic dark dashboard: calm, editorial, never alarming. The Live Desk (`backend/app/live/static/live.css`, `:root`) is the reference implementation.
+
+| Token | Value | Use |
+|---|---|---|
+| `bg` | `#0D1012` | page background |
+| `surface` | `#15191D` | cards, panels |
+| `elevated` | `#1C2227` | hover, selected, overlays |
+| `border` | `#303840` | 1px, subtle |
+| `text` | `#E8ECEF` | primary text |
+| `text-secondary` | `#929DA7` | labels, metadata |
+| `contradiction` | `#D96B68` | contradiction (coral red) |
+| `supports` | `#69B88A` | consistent / supports (green) |
+| `inconclusive` | `#929CAA` | inconclusive; insufficient signal is the same grey, dashed |
+| `accent` | `#83B6D1` | selection, links, re-run |
+
+- **Shape and space:** 12px radius everywhere, an 8px spacing scale, 1px borders. Almost no shadows, and no glows or gradients.
+- **Type:** Inter for all text. IBM Plex Mono **only** for IDs, timestamps, hashes and numbers. Both are vendored locally, with no font CDN.
+- **Status:** a small coloured badge with an icon (Lucide: `triangle-alert`, `circle-check`, `circle-help`, `circle-minus`). Cards keep thin neutral borders; only the selected card is highlighted. Inconclusive must never look disabled.
+- **Text:** never truncate a title. Summaries may be previewed (2 lines) as long as the full text is one click away.
+- **Headline:** a small uppercase "Evidence summary" label, the headline in primary text with a thin 3px bar in its status colour, and one plain sentence from a template (no LLM). Counts are plain numbers ("01 contradiction · 01 consistent · 04 inconclusive/other").
+- **Human-review banner:** always visible, but calm: thin border, regular weight.
+
 ---
 
 ## 10. Demo plan
@@ -547,7 +574,7 @@ Stand-up every 3 hours (5 min): done / next / blocked.
 
 ## 14. Live Desk (wow layer; approved by Sampurna, owned entirely by Sampurna)
 
-A live, end-to-end show of the whole system during the pitch, built on the same pipeline, contract and rules. It is an exception to the feature freeze in §2.8, approved by the team lead. **Owner:** Sampurna. **Files:** `backend/app/live/*`, `backend/app/bot/*`, `frontend/app/live/*`. Dhruva's frontend files stay his; the Live Desk page lives only under `frontend/app/live/`.
+A live, end-to-end show of the whole system during the pitch, built on the same pipeline, contract and rules. It is an exception to the feature freeze in §2.8, approved by the team lead. **Owner:** Sampurna. **Files:** `backend/app/live/*` (the engine, and the standalone page in `backend/app/live/static/`), `backend/app/bot/*`. The Live Desk page is served by the backend at `GET /live` and does not use or touch `frontend/` (Dhruva's Next.js app), so the two never block each other.
 
 ### The flow
 1. **A judge sends a video to the ALIBI Telegram bot as a FILE** (document), with a caption. Sending it as a file matters: Telegram re-compresses videos sent as "video", which would change the original. The bot stores what it received (SHA-256, read-only, §2.6).
@@ -601,13 +628,33 @@ A live, end-to-end show of the whole system during the pitch, built on the same 
   1. A document/video/photo with a caption gets "📥 Received", then the claims, extracted locally from the caption.
   2. If Telegram compressed the media (sent as video or photo), the bot warns that the capture date/GPS was removed.
   3. Files over 20 MB get a polite request for a shorter clip.
-  4. The bot downloads the file, sends `POST ?async=true` with `posted_at` set to the message time, and edits **one** progress message from the real event stream: ✓ done, ⚠ contradiction, – not applicable, ? failed.
+  4. The bot downloads the file, sends `POST ?async=true` with `posted_at` set to the message time, and edits **one** progress message from the real event stream, with one icon per witness by status: ⚠️ contradiction, ✅ consistent, ❔ inconclusive / insufficient signal, ➖ not applicable (… still running). Files without GPS get a tip to turn on Location in the iPhone share sheet.
   5. It sends the result (headline, counts, each contradiction's title and summary, the human-review line), then `alibi_report_<id>.html`.
   6. **Replying to the result (or the report) with new text** calls `/rerun` with that caption, and the result is marked "🔁 Same file, new story: …".
 - **Access:** only chats in `TELEGRAM_ALLOWED_CHAT_IDS`, or chats approved with `/start <TELEGRAM_PASSCODE>`. Everything else is silently ignored.
 - **Safety:** one bad update never stops the loop. The token is never logged: httpx request logging is off, every log line passes through a redacting formatter, and errors are re-raised without the URL.
 - **Tests:** `tests/test_bot.py`, with Telegram and ALIBI mocked via `httpx.MockTransport`.
 
+### Step 3: Live Desk page (done): `GET /live`, files in `backend/app/live/static/`
+- **What it is:** a standalone page served by the backend, in plain HTML, CSS and vanilla JS with no build step. It doesn't use or touch `frontend/`.
+- **Works offline:** the libraries are vendored as files in `static/vendor/`, with no CDN: Cytoscape.js 3.30.2 for the graph and qrcode-generator 1.4.4 for the QR code (both MIT), the Inter and IBM Plex Mono fonts (OFL) and Lucide icons (ISC; `vendor/lucide/icons.js` is generated from the vendored SVGs). Licences and SHA-256s are in `static/README.md`. A test fails if any page file loads something from the internet.
+- **Look:** a full-screen case file for a projector, built on the §9 design system (tokens, Inter + IBM Plex Mono, Lucide icons), with large type and the §9 colours and wording.
+- **Idle screen:** the ALIBI logo, "Send a clip to @<bot>" and a QR code to `https://t.me/<bot>`, with sending instructions. The username comes from `TELEGRAM_BOT_USERNAME` (optional override) or Telegram's `getMe`, looked up in the background at API start-up and cached (`app/live/botinfo.py`, `GET /api/live/info`).
+- **Auto-open:** the page listens to `/api/live/feed`. Any new investigation (Telegram, upload, demo, re-run) opens automatically. `/live?id=inv_…` reopens a specific case; **I**/**Esc** toggles the idle screen.
+- **Live view, drawn from `/api/investigations/{id}/events` as each event arrives** (no timers or staged delays; only a short CSS fade when something appears):
+  - The caption gets its claim spans underlined on `claims_extracted`. They turn red, green or grey with the worst status pointing at them.
+  - The header shows the file name and shared time on one line, the case ID small and muted, the caption, and compact claim tags (`LOCATION · DELHI`).
+  - Six witness tiles go from queued to investigating (`witness_started`, with a subtle progress bar), then on `witness_completed` to a status badge (Lucide icon + §9 label and colour; insufficient signal is grey dashed), the full title and a 2-line summary preview, in the order they actually finish.
+  - The graph has three fixed columns (Media → Claims → Witnesses) at preset positions, so it never jumps. There is **one node per witness**: its findings are merged and the most significant status wins. Edges come only from the findings' `claim_ids` (strongest relation per claim; a finding without claims has no edges), are thin and coloured by relation, fade in, and show their label on hover. `graph_ready` redraws it the same way from the collected findings.
+  - Witness nodes are ordered by the average height of the claims they link to (fewest crossings). Identical node widths, even spacing, subtle arrowheads (media → claims, witnesses → claims). The layout is about 55:45, tiles to graph.
+  - **Linked selection:** clicking a tile or witness node highlights both, lights up its claims (graph and caption) and edges, dims the rest, and opens the detail panel. The tiles become a compact list beside the panel. The panel has these sections: What was checked · Data retrieved · What was found · Why it supports/contradicts the claim (template, from the finding's claim scope) · Alternatives & limitations. Clicking a claim node, caption span or claim tag highlights every witness edge touching it. **Esc** or a click on empty space clears it.
+  - A thin **execution timeline** under the tiles shows when each witness started and finished, from the `witness_started` / `witness_completed` timestamps.
+  - Witnesses that `/api/health` reports as `implemented: false` are shown muted as "Not available in this build". They get no graph edges and are counted apart, never as an investigation result.
+  - **Case details** drawer (button or **D**): each input's SHA-256, size, duration and read-only stored path, plus the chain-of-custody log of the run's events.
+  - Then the editorial evidence summary: the headline with a thin status bar, plain sentences built from what each witness checked (time / location / event scope; template, no LLM), e.g. "Recorded rainfall does not support the claimed flood. The capture time matches the stated time, which does not confirm the location or the event.", and per-witness counts. The calm "Human review required. This is an evidence report, not a verdict." banner is always visible.
+- **Re-run (`parent_id`):** a "Same file, new story" tag, and the old and new captions and headlines side by side.
+- **Time Machine:** if a prior_appearance finding has `details.frame_matches`, it shows the best-matching uploaded frame and archive frame side by side, with `verified_date`, `verified_location` and `verified_by`. Frame paths are run artifacts (`artifacts/...`) served from `/api/files/{id}/...`.
+- **Tests:** `tests/test_live_page.py` covers the page and its static files, no external URLs, licences, wording, a `node --check` of `live.js`, and the bot-username cache.
+
 ### Next steps
-- Step 3: Live Desk page (`frontend/app/live/`).
 - Step 4: Sarvam briefing.

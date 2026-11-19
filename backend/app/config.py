@@ -68,6 +68,11 @@ BOT_STATE_FILE = DATA_DIR / "bot_chats.json"       # approved chats + which mess
 # 127.0.0.1 rather than "localhost": on Windows, "localhost" tries IPv6 ::1 first and every new
 # connection to uvicorn (which listens on 127.0.0.1) waits ~2 s before falling back.
 ALIBI_API_URL = os.getenv("ALIBI_API_URL", "http://127.0.0.1:8000").rstrip("/")
+# Optional: the bot's @username for the Live Desk idle screen. Empty = ask Telegram (getMe) once and cache it.
+TELEGRAM_BOT_USERNAME = os.getenv("TELEGRAM_BOT_USERNAME", "").strip().lstrip("@")
+
+# Live Desk page (§14 step 3): standalone HTML/CSS/JS served at GET /live, libraries vendored (offline).
+LIVE_STATIC_DIR = BACKEND_DIR / "app" / "live" / "static"
 
 # Demo presets (POST /api/demo/{case}): cases are read from this file; file paths in it are
 # relative to the repo root and must stay inside demo/.
@@ -305,7 +310,13 @@ PRIOR_TIME_MACHINE_JPEG_QUALITY = 80
 # =============================================================================
 
 # Metadata integrity (§6.2)
-METADATA_MAX_DATE_DIFF_DAYS = 2      # capture date vs claimed date
+# Capture time vs the claim's [start, end] window (calibrated on the team's genuine clips):
+#   time zone known (offset in the file, or QuickTime UTC): within the window +/- this many hours
+#   is consistent, further outside is a contradiction (medium).
+METADATA_TIME_MARGIN_HOURS = 12
+#   time zone unknown (no offset): outside the window but within this many days is inconclusive,
+#   further outside is a contradiction (medium).
+METADATA_MAX_DATE_DIFF_DAYS = 2
 METADATA_MAX_GPS_DIST_KM = 50.0      # GPS vs claimed location
 METADATA_EDITING_SOFTWARE = [
     "photoshop", "lightroom", "snapseed", "capcut", "picsart", "facetune",

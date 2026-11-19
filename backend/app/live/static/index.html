@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ALIBI Live Desk</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/live/static/live.css">
+</head>
+<body>
+
+  <!-- Idle screen: shown until a case arrives (press I to bring it back) -->
+  <section id="idle" class="idle">
+    <div class="idle-card">
+      <div class="idle-brand">ALIBI</div>
+      <p class="idle-tagline">Every piece of media has an alibi. We check whether it holds up.</p>
+      <div class="idle-row">
+        <div id="qr" class="qr" hidden></div>
+        <div class="idle-text">
+          <div class="eyebrow">Submit a case</div>
+          <p class="idle-send">Send a clip to <span id="bot-name" class="mono">the ALIBI Telegram bot</span></p>
+          <ol class="idle-steps">
+            <li><span class="step-n mono">01</span>Record 5–8 s in 1080p</li>
+            <li><span class="step-n mono">02</span>Attach it as a <b>File</b> (not Gallery), so the date and GPS survive</li>
+            <li><span class="step-n mono">03</span>Caption: place, time and what happened</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+    <div class="conn"><span id="conn-dot" class="conn-dot"></span><span id="conn-text">connecting…</span></div>
+  </section>
+
+  <!-- Case screen -->
+  <main id="case" class="case" hidden>
+    <header class="case-head">
+      <div class="head-row">
+        <div class="brand">ALIBI <span class="brand-sub">Live Desk</span></div>
+        <div class="file-line"><span id="file-name" class="file-name"></span><span id="file-time" class="mono file-time"></span></div>
+        <div id="rerun-tag" class="rerun-tag" hidden></div>
+        <div class="head-right">
+          <span id="case-status" class="case-status"></span>
+          <button id="details-btn" class="details-btn" type="button"></button>
+          <span id="case-id" class="mono case-id"></span>
+        </div>
+      </div>
+      <p id="caption" class="caption"></p>
+      <div id="claims" class="claims"></div>
+    </header>
+
+    <section class="middle">
+      <div class="witness-area">
+        <div id="wa-main" class="wa-main">
+          <div id="tiles" class="tiles"></div>
+          <aside id="detail" class="detail" hidden>
+            <div class="detail-head">
+              <span id="detail-icon" class="detail-icon"></span>
+              <span id="detail-name" class="detail-name"></span>
+              <button id="detail-close" class="icon-btn" type="button" aria-label="Close"></button>
+            </div>
+            <div id="detail-body" class="detail-body"></div>
+          </aside>
+        </div>
+        <div class="timeline">
+          <div class="tl-head"><span class="eyebrow">Execution timeline</span><span id="tl-span" class="mono tl-span"></span></div>
+          <div id="tl-lanes" class="tl-lanes"></div>
+        </div>
+      </div>
+      <div class="graph-panel">
+        <div class="panel-head">
+          <span class="eyebrow">Evidence graph</span>
+          <span class="legend"><i class="lg contra"></i>contradicts<i class="lg supports"></i>supports<i class="lg inconc"></i>inconclusive</span>
+        </div>
+        <div id="graph" class="graph"></div>
+      </div>
+    </section>
+
+    <section class="bottom">
+      <div id="result" class="result pending">
+        <div class="eyebrow">Evidence summary</div>
+        <div id="headline" class="headline">Waiting for the witnesses…</div>
+        <p id="sentence" class="sentence"></p>
+        <div id="counts" class="counts mono"></div>
+      </div>
+      <div id="compare" class="compare" hidden>
+        <div class="eyebrow">Same file, new story</div>
+        <div class="compare-cols">
+          <div class="cmp"><div class="cmp-label">Before</div><p id="cmp-old-caption" class="cmp-caption"></p><div id="cmp-old" class="cmp-headline"></div></div>
+          <div class="cmp"><div class="cmp-label">Now</div><p id="cmp-new-caption" class="cmp-caption"></p><div id="cmp-new" class="cmp-headline"></div></div>
+        </div>
+      </div>
+      <div id="timemachine" class="timemachine" hidden>
+        <div class="eyebrow">Seen before</div>
+        <div class="tm-cols">
+          <figure><img id="tm-upload" alt="Frame from the uploaded clip"><figcaption id="tm-upload-cap">Uploaded clip</figcaption></figure>
+          <figure><img id="tm-archive" alt="Matching frame from the verified archive"><figcaption id="tm-archive-cap">Verified archive</figcaption></figure>
+        </div>
+      </div>
+    </section>
+
+    <footer class="banner">Human review required. This is an evidence report, not a verdict.</footer>
+  </main>
+
+  <!-- Case details drawer: original files (SHA-256), chain-of-custody log. D toggles it. -->
+  <aside id="drawer" class="drawer" hidden>
+    <div class="detail-head">
+      <span id="drawer-icon" class="detail-icon"></span>
+      <span class="detail-name">Case details</span>
+      <button id="drawer-close" class="icon-btn" type="button" aria-label="Close"></button>
+    </div>
+    <div id="drawer-body" class="detail-body"></div>
+  </aside>
+
+  <script src="/live/static/vendor/cytoscape.min.js"></script>
+  <script src="/live/static/vendor/qrcode.js"></script>
+  <script src="/live/static/vendor/lucide/icons.js"></script>
+  <script src="/live/static/live.js"></script>
+</body>
+</html>

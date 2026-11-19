@@ -112,6 +112,14 @@ Judges send a clip to a Telegram bot. They get the claims at once, live progress
 - A normal video upload makes Telegram strip the capture date and GPS. The bot warns about that, and metadata comes out inconclusive.
 - Bots can't download files over 20 MB, so a long 4K clip gets a polite "send a shorter clip".
 
+### Live Desk page (big screen)
+
+With the API running, open **<http://127.0.0.1:8000/live>** on the projector and press **F11**.
+- **Idle screen:** shows "Send a clip to @your_bot" and a QR code. The username comes from `TELEGRAM_BOT_USERNAME`, or from Telegram when the API starts.
+- **New cases open automatically,** whether from the Telegram bot, an upload, a demo button or a re-run. The caption, witness tiles, graph and headline fill in as the investigation's events arrive.
+- **Shortcuts:** `/live?id=inv_…` reopens a case; **I** or **Esc** toggles the idle screen.
+- **Offline:** it needs no internet connection. The graph and QR libraries are local files (see `backend/app/live/static/README.md`).
+
 ## Frontend
 
 ```powershell
