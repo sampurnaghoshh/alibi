@@ -133,7 +133,7 @@ def ai_check(findings: list[Finding]) -> dict:
     strong = reasons("strong")
     if strong:
         return {"question": AUTHENTICITY_QUESTION, "kind": "synthetic_strong", "alert": True,
-                "answer": "Strong synthetic-generation signals (" + "; ".join(strong[:3]) + ")",
+                "answer": "Strong synthetic-generation signals",
                 "note": SYNTH_NOTE, "badge": "AI SIGNALS: STRONG", "badge_detail": "; ".join(strong[:4])}
     edits = [f for f in meta if (f.details or {}).get("software_tags") and f.title == "Editing software tag present"]
     if edits:
@@ -144,7 +144,7 @@ def ai_check(findings: list[Finding]) -> dict:
     weak = reasons("weak")
     if weak:
         return {"question": AUTHENTICITY_QUESTION, "kind": "synthetic_weak", "alert": False,
-                "answer": "Weak synthetic signal (" + "; ".join(weak[:3]) + ")",
+                "answer": "Weak synthetic signal",
                 "note": SYNTH_NOTE, "badge": "AI SIGNALS: WEAK", "badge_detail": "; ".join(weak[:4])}
     return {"question": AUTHENTICITY_QUESTION, "kind": "none", "alert": False,
             "answer": "No manipulation indicators found", "note": AUTHENTICITY_NOTE,

@@ -46,9 +46,12 @@
       </div>
       <!-- AI & manipulation check: the plain answer, derived from the findings (app/engine/summary.py) -->
       <div id="auth" class="auth" hidden>
-        <div id="aibadge" class="aibadge"><div id="aibadge-main" class="aibadge-main"></div><div id="aibadge-detail" class="aibadge-detail"></div></div>
-        <div class="auth-line"><span class="auth-q"></span><b id="auth-a" class="auth-a"></b></div>
-        <div id="auth-ctx" class="auth-ctx"></div>
+        <div id="aibadge" class="aibadge"><span id="aibadge-main" class="aibadge-main"></span></div>
+        <div class="auth-text">
+          <div class="auth-line"><span class="auth-q"></span><b id="auth-a" class="auth-a"></b></div>
+          <div id="aibadge-detail" class="aibadge-detail"></div>
+          <div id="auth-ctx" class="auth-ctx"></div>
+        </div>
       </div>
       <p id="caption" class="caption"></p>
       <div id="claims" class="claims"></div>
@@ -66,10 +69,6 @@
             </div>
             <div id="detail-body" class="detail-body"></div>
           </aside>
-        </div>
-        <div class="timeline">
-          <div class="tl-head"><span class="eyebrow">Execution timeline</span><span id="tl-span" class="mono tl-span"></span></div>
-          <div id="tl-lanes" class="tl-lanes"></div>
         </div>
       </div>
       <div class="graph-panel">
@@ -135,6 +134,11 @@
       <span id="drawer-icon" class="detail-icon"></span>
       <span class="detail-name">Case details</span>
       <button id="drawer-close" class="icon-btn" type="button" aria-label="Close"></button>
+    </div>
+    <!-- Execution timeline (from witness_started / witness_completed timestamps), kept here so the tiles get the room -->
+    <div class="timeline drawer-tl">
+      <div class="tl-head"><span class="eyebrow">Execution timeline</span><span id="tl-span" class="mono tl-span"></span></div>
+      <div id="tl-lanes" class="tl-lanes"></div>
     </div>
     <div id="drawer-body" class="detail-body"></div>
   </aside>

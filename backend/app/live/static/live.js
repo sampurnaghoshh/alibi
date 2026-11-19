@@ -240,7 +240,7 @@
       .forEach(function (h) { cy.add({ group: "nodes", data: { id: h[0], label: h[1], col: h[2] }, classes: "colhead" }); });
     cy.add({ group: "nodes", data: { id: "a1", label: "" }, classes: "anchor" });
     cy.add({ group: "nodes", data: { id: "a2", label: "" }, classes: "anchor" });
-    frame(cy, 6);
+    frame(cy, WITNESSES.length);
     cy.on("mouseover", "edge", function (e) { e.target.addClass("hover"); });
     cy.on("mouseout", "edge", function (e) { e.target.removeClass("hover"); });
     cy.on("tap", "node.witness", function (e) { toggleSelect("witness", e.target.data("witness")); });
@@ -273,7 +273,7 @@
 
   function place(cy) {
     var inputs = cy.nodes(".input"), claims = cy.nodes(".claim"), witnesses = cy.nodes(".witness");
-    var rows = Math.max(6, inputs.length, claims.length);
+    var rows = Math.max(WITNESSES.length, inputs.length, claims.length);
     if (rows !== cy.scratch("rows")) frame(cy, rows);
     // media and claims: evenly spaced, centred; claims keep caption order
     inputs.forEach(function (n, i) { moveTo(n, { x: COLX.input, y: rowY(i, inputs.length) }); });
@@ -513,12 +513,12 @@
     fitTile(t);
   }
 
-  function fitTile(t) {   // never cut the title: the summary preview shrinks to one line, then hides
+  function fitTile(t) {   // never cut the title; the summary preview is one line (two only when there is room)
     var s = t.querySelector(".t-summary");
     if (!s || $("wa-main").classList.contains("has-detail")) return;
     s.classList.remove("one", "none");
     if (t.scrollHeight > t.clientHeight + 1) s.classList.add("one");
-    if (t.scrollHeight > t.clientHeight + 1) { s.classList.remove("one"); s.classList.add("none"); }
+
   }
   function fitTiles() { document.querySelectorAll(".tile.done").forEach(fitTile); }
 
@@ -829,11 +829,16 @@
     $("auth-a").title = au.note;
     $("aibadge").className = "aibadge " + (au.alert ? "b-hit" : "b-none");
     $("aibadge-main").textContent = au.badge || "";
-    $("aibadge-detail").textContent = au.badge_detail || "";
+    // One-line note: the reasons / "not proof" sentence for signals and none; the method note otherwise
+    // (the answer already names the generator or software).
+    var note = /^synthetic_|^none$/.test(au.kind) ? (au.badge_detail || au.note) : au.note;
+    $("aibadge-detail").textContent = note;
+    $("aibadge-detail").title = note;
     $("auth-ctx").textContent = sm.caption_less
       ? "No caption to check, so place, time and weather checks were skipped."
       : "Context: " + a.headline_text;
     box.hidden = false;
+    refit();
   }
 
   function showAssessment(a) {
@@ -1119,6 +1124,10 @@
   $("help-close").innerHTML = icon("x");
   $("help-close").addEventListener("click", function () { toggleHelp(false); });
   window.addEventListener("resize", function () { refit(); fitTiles(); });
+  if (window.ResizeObserver) {          // the header grows when the badge / caption / claims arrive: re-fit then too
+    var ro = new ResizeObserver(function () { refit(); });
+    ro.observe($("graph"));
+  }
 
   loadIdle();
   listen();
