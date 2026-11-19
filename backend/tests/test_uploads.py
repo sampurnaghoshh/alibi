@@ -11,6 +11,7 @@ from app.main import app
 from app.uploads import sniff
 
 client = TestClient(app)
+pytestmark = pytest.mark.usefixtures("offline")   # no live weather calls from pipeline tests
 
 
 @pytest.fixture(autouse=True)

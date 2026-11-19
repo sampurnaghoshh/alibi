@@ -12,6 +12,7 @@ from app.main import app
 from app.schemas import Investigation
 
 client = TestClient(app)
+pytestmark = pytest.mark.usefixtures("offline")   # no live weather calls from pipeline tests
 
 CAPTIONS = """# Demo captions
 

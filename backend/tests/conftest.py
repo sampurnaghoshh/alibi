@@ -20,6 +20,23 @@ def noise(w: int, h: int, seed: int = 0) -> Image.Image:
 
 
 @pytest.fixture
+def offline(tmp_path, monkeypatch):
+    """No network and an empty API cache: pipeline tests must not depend on today's weather
+    or on whatever data/cache/ holds. Witnesses that need the network report inconclusive."""
+    import requests
+
+    from app import config
+
+    def no_network(*args, **kwargs):
+        raise requests.ConnectionError("network disabled in tests")
+
+    monkeypatch.setattr(config, "CACHE_DIR", tmp_path / "cache")
+    monkeypatch.setattr(config, "GEOCODE_CACHE_DIR", tmp_path / "cache" / "geocode")
+    monkeypatch.setattr(requests, "get", no_network)
+    monkeypatch.setattr(requests.Session, "request", no_network)
+
+
+@pytest.fixture
 def make_video():
     """make_video(path, seconds=3, fps=10, frame_fn=None) -> path. Skips if OpenCV is missing."""
     cv2 = pytest.importorskip("cv2")

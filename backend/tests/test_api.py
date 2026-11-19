@@ -14,6 +14,7 @@ from app.main import app
 from app.schemas import Investigation
 
 client = TestClient(app)
+pytestmark = pytest.mark.usefixtures("offline")   # no live weather calls from pipeline tests
 FIXTURE = json.loads(config.FIXTURE_PATH.read_text(encoding="utf-8"))
 
 
