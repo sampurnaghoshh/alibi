@@ -250,6 +250,7 @@ svg.ic { width: 1.15em; height: 1.15em; flex: none; vertical-align: -0.2em; }
   .headline { font-size: 1.22em; margin-top: 6px; }
   .sentence { margin-top: 6px; }
   .banner { padding: 6px 12px; }
+  .tm-cols img { max-height: 11vh; }   /* keep room for the tiles above */
 }
 
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }

@@ -103,6 +103,12 @@ def test_page_marks_unimplemented_witnesses_from_health():
     assert all("implemented" in w for w in health["witnesses"])
 
 
+def test_seen_before_panel_only_for_high_reliability_matches():
+    js = (STATIC / "live.js").read_text(encoding="utf-8")
+    body = js[js.index("function showTimeMachine"):js.index("function showCompare")]
+    assert 'x.reliability === "high"' in body and "frame_matches" in body
+
+
 def test_detail_panel_sections_and_drawer():
     js = (STATIC / "live.js").read_text(encoding="utf-8")
     for heading in ("What was checked", "Data retrieved", "What was found", "Why it contradicts the claim",

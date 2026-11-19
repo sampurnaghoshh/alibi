@@ -1,1 +1,24 @@
-[]
+[
+  {
+    "clip_id": "casea_original",
+    "file": "casea_original.MOV",
+    "title": "Jalahalli recording by Adithi (original HDR file)",
+    "verified_date": "2026-10-05",
+    "verified_location": "Jalahalli, Bengaluru Urban, Karnataka",
+    "verified_lat": 13.0501,
+    "verified_lon": 77.5364,
+    "verified_by": "Adithi (team member, own recording)",
+    "source_note": "Recorded by Adithi on her phone at 17:19 IST; original file supplied by her"
+  },
+  {
+    "clip_id": "casea_circulating",
+    "file": "casea_circulating.mp4",
+    "title": "Jalahalli recording by Adithi (first WhatsApp copy, the version that circulates)",
+    "verified_date": "2026-10-05",
+    "verified_location": "Jalahalli, Bengaluru Urban, Karnataka",
+    "verified_lat": 13.0501,
+    "verified_lon": 77.5364,
+    "verified_by": "Adithi (team member, own recording)",
+    "source_note": "Recorded by Adithi on her phone at 17:19 IST; original file supplied by her. This entry is her first WhatsApp copy (SDR)"
+  }
+]

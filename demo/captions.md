@@ -9,10 +9,11 @@ Each case is a `## <name>` heading followed by `key: value` lines.
 - `expect`: what the investigation should show. Controls must **never** show a contradiction.
 
 ## case_a
-caption: Massive flooding in Chennai yesterday evening, roads completely underwater
+caption: Massive flooding in Chennai yesterday evening
 posted_at: 2026-11-19
-files: demo/case_a/clip.mp4
+files: demo/case_a/casea_whatsapp_2.mp4
 expect: prior_appearance contradiction (high); weather contradiction (medium); metadata inconclusive; lipsync not applicable
+archive: casea_original (HDR original) + casea_circulating (first WhatsApp copy, SDR), both verified Jalahalli, Bengaluru, 5 Oct 2026 17:19 IST (Adithi's own recording). The upload is a second, independent WhatsApp copy.
 note: Confirm with the weather witness that Chennai was dry on the claimed evening before relying on this date.
 
 ## case_b

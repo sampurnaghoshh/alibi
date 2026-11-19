@@ -1,6 +1,92 @@
 {
-  "built_at": "2026-11-19T06:59:17+00:00",
+  "built_at": "2026-11-19T17:16:24+00:00",
   "sample_fps": 1.0,
+  "frame_max_width": 640,
   "hash": "imagehash.phash, 64-bit, hex",
-  "clips": []
+  "clips": [
+    {
+      "clip_id": "casea_original",
+      "file": "casea_original.MOV",
+      "title": "Jalahalli recording by Adithi (original HDR file)",
+      "verified_date": "2026-10-05",
+      "verified_location": "Jalahalli, Bengaluru Urban, Karnataka",
+      "verified_by": "Adithi (team member, own recording)",
+      "source_note": "Recorded by Adithi on her phone at 17:19 IST; original file supplied by her",
+      "verified_lat": 13.0501,
+      "verified_lon": 77.5364,
+      "sha256": "60bc6bff76f5f8c660d801f421fc43f3e955a8b2080ae04f7ee9f5ced0951045",
+      "duration_s": 2.867,
+      "sample_fps": 4.0,
+      "frame_times_s": [
+        0.0,
+        0.267,
+        0.5,
+        0.767,
+        1.0,
+        1.267,
+        1.5,
+        1.767,
+        2.0,
+        2.267,
+        2.5,
+        2.767
+      ],
+      "frame_hashes": [
+        "ee84d0354b7e3895",
+        "f0a58f3b5245b4aa",
+        "d4aa976f20d82f85",
+        "dda2907b2cc4b98b",
+        "d0af85763fc0301f",
+        "c0bf857098c53f5c",
+        "c0bf857880c73e5d",
+        "c0bf847c8bc03f5c",
+        "e4ab807f84c03f5e",
+        "f78a817f87d0250b",
+        "f38f846b07d5bd00",
+        "d2adc3340af99e92"
+      ]
+    },
+    {
+      "clip_id": "casea_circulating",
+      "file": "casea_circulating.mp4",
+      "title": "Jalahalli recording by Adithi (first WhatsApp copy, the version that circulates)",
+      "verified_date": "2026-10-05",
+      "verified_location": "Jalahalli, Bengaluru Urban, Karnataka",
+      "verified_by": "Adithi (team member, own recording)",
+      "source_note": "Recorded by Adithi on her phone at 17:19 IST; original file supplied by her. This entry is her first WhatsApp copy (SDR)",
+      "verified_lat": 13.0501,
+      "verified_lon": 77.5364,
+      "sha256": "01a5d04357f2a16188cf2f229ae30c623eec0038eec781079989065bb6019f17",
+      "duration_s": 2.867,
+      "sample_fps": 4.0,
+      "frame_times_s": [
+        0.0,
+        0.267,
+        0.5,
+        0.767,
+        1.0,
+        1.267,
+        1.5,
+        1.767,
+        2.0,
+        2.267,
+        2.5,
+        2.767
+      ],
+      "frame_hashes": [
+        "ea94d1054f7e38b1",
+        "d0a5df3b1245a4e9",
+        "d4ba976320dd1e85",
+        "f5a3805b0fe5b588",
+        "c0bf957a3fc0201f",
+        "c0bf977080c33e7c",
+        "c0bf957080c73ef1",
+        "c0bf977881c03f55",
+        "f49b807ec4c03f5a",
+        "f788887f66f0a40b",
+        "f18f842f13f0bd82",
+        "d4adc3362af99582"
+      ]
+    }
+  ]
 }

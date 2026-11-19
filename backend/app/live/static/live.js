@@ -868,10 +868,16 @@
   }
 
   function showTimeMachine(invId, findings) {   // prior_appearance with frame matches: the archive moment
-    var f = findings.filter(function (x) { return x.details && x.details.frame_matches && x.details.frame_matches.length; })[0];
+    // Only a high-reliability match (a near-identical copy) is shown as "Seen before"; a medium
+    // "resembles" result keeps its pairs in the detail panel's data, not on the big screen.
+    var f = findings.filter(function (x) {
+      return x.reliability === "high" && x.details && x.details.frame_matches && x.details.frame_matches.length;
+    })[0];
     if (!f) return;
     var d = f.details;
     var best = d.frame_matches.slice().sort(function (a, b) { return (a.hamming || 0) - (b.hamming || 0); })[0];
+    // the panel only takes its final height once the frames have loaded: refit the graph and tiles then
+    ["tm-upload", "tm-archive"].forEach(function (id) { $(id).onload = function () { refit(); fitTiles(); }; });
     $("tm-upload").src = fileUrl(invId, best.upload_frame);
     $("tm-archive").src = fileUrl(invId, best.archive_frame);
     $("tm-upload-cap").textContent = "This upload, at " + Number(best.upload_s || 0).toFixed(1) + " s";
