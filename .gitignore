@@ -1,0 +1,26 @@
+# Secrets
+.env
+*.env.local
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+
+# Runtime data (keep the folders, ignore the contents)
+data/runs/*
+!data/runs/.gitkeep
+data/cache/*
+!data/cache/.gitkeep
+
+# Editors / OS
+.DS_Store
+Thumbs.db
+.idea/

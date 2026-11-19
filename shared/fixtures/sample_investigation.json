@@ -1,0 +1,286 @@
+{
+  "id": "inv_20261119_101500_ab12",
+  "created_at": "2026-11-19T10:15:00+05:30",
+  "posted_at": "2026-11-19T09:00:00+05:30",
+  "caption": "Massive flooding in Chennai yesterday evening, roads completely underwater",
+  "inputs": [
+    {
+      "file_id": "in_1",
+      "name": "chennai_flood.mp4",
+      "mime": "video/mp4",
+      "size": 4821337,
+      "sha256": "3b7e9c1d2f4a6b8c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c",
+      "duration_s": 14.2,
+      "stored_path": "originals/in_1_chennai_flood.mp4"
+    }
+  ],
+  "claims": [
+    {
+      "id": "c1",
+      "type": "weather_condition",
+      "value": "flooding",
+      "normalized": { "condition": "flood" },
+      "source": { "field": "caption", "start": 8, "end": 16, "text": "flooding" },
+      "extracted_by": "rules"
+    },
+    {
+      "id": "c2",
+      "type": "location",
+      "value": "Chennai",
+      "normalized": { "lat": 13.0827, "lon": 80.2707, "country": "IN" },
+      "source": { "field": "caption", "start": 20, "end": 27, "text": "Chennai" },
+      "extracted_by": "rules"
+    },
+    {
+      "id": "c3",
+      "type": "time",
+      "value": "yesterday evening",
+      "normalized": {
+        "date": "2026-11-18",
+        "start": "2026-11-18T17:00:00+05:30",
+        "end": "2026-11-18T21:00:00+05:30",
+        "precision": "part_of_day"
+      },
+      "source": { "field": "caption", "start": 28, "end": 45, "text": "yesterday evening" },
+      "extracted_by": "rules"
+    }
+  ],
+  "findings": [
+    {
+      "id": "f_prior_1",
+      "witness": "prior_appearance",
+      "family": "context",
+      "claim_ids": ["c2", "c3"],
+      "status": "contradiction",
+      "reliability": "high",
+      "title": "Frames match a clip verified as recorded in Pune on 25 Jul 2024",
+      "summary": "9 of 14 sampled frames match archive clip #007 (minimum Hamming distance 3). The verified date and place disagree with the caption's 'Chennai, yesterday evening'.",
+      "details": {
+        "archive_size": 12,
+        "matched_clip_id": "clip_007",
+        "matched_clip_title": "Waterlogged street after monsoon rain",
+        "verified_date": "2024-07-25",
+        "verified_location": "Pune, Maharashtra",
+        "verified_by": "Recorded by team member (demo archive)",
+        "sampled_frames": 14,
+        "matched_frames": 9,
+        "min_hamming": 3,
+        "match_threshold": 8,
+        "frame_matches": [
+          { "upload_s": 1.0, "archive_s": 4.0, "hamming": 3, "upload_frame": "artifacts/frames/up_001.jpg", "archive_frame": "artifacts/frames/ar_004.jpg" },
+          { "upload_s": 2.0, "archive_s": 5.0, "hamming": 4, "upload_frame": "artifacts/frames/up_002.jpg", "archive_frame": "artifacts/frames/ar_005.jpg" },
+          { "upload_s": 5.0, "archive_s": 8.0, "hamming": 6, "upload_frame": "artifacts/frames/up_005.jpg", "archive_frame": "artifacts/frames/ar_008.jpg" }
+        ]
+      },
+      "evidence": [
+        { "kind": "archive_match", "ref": "archive:clip_007", "label": "Verified archive clip #007" },
+        { "kind": "artifact", "ref": "artifacts/prior_appearance_matches.json", "label": "Frame-by-frame hash comparison" }
+      ],
+      "locations": [
+        { "kind": "timestamp", "file_id": "in_1", "start_s": 1.0, "end_s": 9.0 }
+      ],
+      "alternatives": [
+        "The archive entry itself could be mislabelled (archive provenance should be re-checked)",
+        "A visually similar scene filmed elsewhere could produce close hashes, though 9 matching frames makes this unlikely"
+      ],
+      "limitations": [
+        "Archive is small (12 clips). In production this connects to reverse-image search and fact-checker databases.",
+        "Perceptual hashes can miss heavily cropped, mirrored or filtered copies"
+      ],
+      "elapsed_ms": 1430
+    },
+    {
+      "id": "f_weather_1",
+      "witness": "weather",
+      "family": "context",
+      "claim_ids": ["c1", "c2", "c3"],
+      "status": "contradiction",
+      "reliability": "medium",
+      "title": "Recorded rainfall does not support the stated flooding",
+      "summary": "0.0 mm at the claimed location during 17:00–21:00 on 18 Nov; 0.0–0.4 mm across 4 surrounding points; 1.2 mm over the preceding 72 h.",
+      "details": {
+        "api": "forecast_past_days",
+        "claimed_window": { "start": "2026-11-18T17:00:00+05:30", "end": "2026-11-18T21:00:00+05:30" },
+        "centre": { "lat": 13.0827, "lon": 80.2707, "window_mm": 0.0, "day_mm": 0.0 },
+        "grid": [
+          { "label": "N", "lat": 13.2327, "lon": 80.2707, "day_mm": 0.4 },
+          { "label": "S", "lat": 12.9327, "lon": 80.2707, "day_mm": 0.0 },
+          { "label": "E", "lat": 13.0827, "lon": 80.4207, "day_mm": 0.1 },
+          { "label": "W", "lat": 13.0827, "lon": 80.1207, "day_mm": 0.0 }
+        ],
+        "grid_max_mm": 0.4,
+        "prior_72h_mm": 1.2,
+        "hourly_centre": [
+          { "t": "2026-11-18T12:00:00+05:30", "mm": 0.0 },
+          { "t": "2026-11-18T15:00:00+05:30", "mm": 0.0 },
+          { "t": "2026-11-18T18:00:00+05:30", "mm": 0.0 },
+          { "t": "2026-11-18T21:00:00+05:30", "mm": 0.0 }
+        ],
+        "thresholds": { "dry_point_mm": 1.0, "dry_72h_mm": 5.0 }
+      },
+      "evidence": [
+        { "kind": "api", "ref": "https://api.open-meteo.com/v1/forecast?latitude=13.0827&longitude=80.2707&hourly=precipitation&daily=precipitation_sum&past_days=7&timezone=auto", "label": "Open-Meteo hourly precipitation (centre)" },
+        { "kind": "artifact", "ref": "artifacts/weather_grid.json", "label": "All 5 grid readings" }
+      ],
+      "locations": [],
+      "alternatives": [
+        "Rain upstream or in the catchment may not show up in a small local grid",
+        "Flooding can come from drainage failure or reservoir release",
+        "Very localised rain can fall below the grid's resolution"
+      ],
+      "limitations": [
+        "Model/reanalysis grid resolution is about 10 km",
+        "Weather records cannot confirm or rule out non-rain causes of flooding"
+      ],
+      "elapsed_ms": 812
+    },
+    {
+      "id": "f_metadata_1",
+      "witness": "metadata",
+      "family": "context",
+      "claim_ids": ["c2", "c3"],
+      "status": "inconclusive",
+      "reliability": "low",
+      "title": "Original capture metadata unavailable",
+      "summary": "No capture date, GPS or camera make/model found. Encoder tag and file naming suggest re-encoding by a messaging app.",
+      "details": {
+        "fields_present": ["FileSize", "Duration", "ImageWidth", "ImageHeight", "Encoder"],
+        "fields_missing": ["CreateDate", "GPSLatitude", "GPSLongitude", "Make", "Model"],
+        "encoder": "Lavf58.76.100",
+        "editing_software": null,
+        "reencode_hints": ["Camera fields absent", "Generic encoder tag", "Messaging-app style filename pattern"]
+      },
+      "evidence": [
+        { "kind": "metadata_field", "ref": "Encoder=Lavf58.76.100", "label": "Container encoder tag" },
+        { "kind": "artifact", "ref": "artifacts/metadata_raw.json", "label": "Full exiftool + ffprobe output" }
+      ],
+      "locations": [],
+      "alternatives": [
+        "Metadata is commonly stripped by messaging apps and social platforms, so its absence says nothing about authenticity"
+      ],
+      "limitations": [
+        "Metadata can be edited or removed; it is supporting evidence, not ground truth"
+      ],
+      "elapsed_ms": 240
+    },
+    {
+      "id": "f_enf_1",
+      "witness": "enf",
+      "family": "signal",
+      "claim_ids": ["c2"],
+      "status": "insufficient_signal",
+      "reliability": "low",
+      "title": "No reliable power-grid hum detected",
+      "summary": "No stable 50/100 Hz or 60/120 Hz component above 6 dB SNR. Outdoor footage commonly lacks mains hum.",
+      "details": {
+        "bands": [
+          { "hz": 50, "snr_db": 1.8, "frames_detected_pct": 4 },
+          { "hz": 100, "snr_db": 2.3, "frames_detected_pct": 7 },
+          { "hz": 60, "snr_db": 0.9, "frames_detected_pct": 0 },
+          { "hz": 120, "snr_db": 1.1, "frames_detected_pct": 0 }
+        ],
+        "detection_threshold_db": 6,
+        "spectrogram": "artifacts/enf_spectrogram.png"
+      },
+      "evidence": [
+        { "kind": "artifact", "ref": "artifacts/enf_spectrogram.png", "label": "Spectrogram 40–130 Hz" }
+      ],
+      "locations": [],
+      "alternatives": [
+        "Outdoor or battery-powered recording environments have no mains hum",
+        "Phone noise suppression often removes low-frequency hum"
+      ],
+      "limitations": [
+        "Absence of hum is never evidence of manipulation"
+      ],
+      "elapsed_ms": 655
+    },
+    {
+      "id": "f_lipsync_1",
+      "witness": "lipsync",
+      "family": "signal",
+      "claim_ids": [],
+      "status": "not_applicable",
+      "reliability": "low",
+      "title": "No speaking face detected",
+      "summary": "A face was found in 0% of sampled frames, so the synchrony indicator was not run.",
+      "details": { "face_detected_pct": 0, "min_required_pct": 50 },
+      "evidence": [],
+      "locations": [],
+      "alternatives": ["Footage without an on-screen speaker cannot be checked for lip synchrony"],
+      "limitations": ["Synchrony indicator needs a visible face and speech"],
+      "elapsed_ms": 980
+    },
+    {
+      "id": "f_ela_1",
+      "witness": "ela",
+      "family": "pixels",
+      "claim_ids": [],
+      "status": "inconclusive",
+      "reliability": "low",
+      "title": "No strong localised compression anomaly",
+      "summary": "Error-level analysis on the keyframe at 4.0 s shows uniform error levels with no isolated bright region.",
+      "details": { "frame_s": 4.0, "jpeg_quality": 90, "amplification": 15, "heatmap": "artifacts/ela_4.0s.png" },
+      "evidence": [
+        { "kind": "artifact", "ref": "artifacts/ela_4.0s.png", "label": "ELA heatmap (keyframe 4.0 s)" }
+      ],
+      "locations": [
+        { "kind": "region", "file_id": "in_1", "frame_s": 4.0, "bbox": [0.0, 0.0, 1.0, 1.0] }
+      ],
+      "alternatives": ["Heavy re-compression flattens ELA differences and can hide or mimic edits"],
+      "limitations": ["ELA is a visual aid only and never a verdict"],
+      "elapsed_ms": 310
+    }
+  ],
+  "assessment": {
+    "headline": "context_not_supported",
+    "headline_text": "The stated context is not supported by the available evidence",
+    "counts": { "contradiction": 2, "consistent": 0, "inconclusive": 2, "insufficient_signal": 1, "not_applicable": 1 },
+    "families": { "context": "contradiction", "signal": "inconclusive", "pixels": "inconclusive" },
+    "weak_indicators": ["f_ela_1"],
+    "human_review": "priority",
+    "experimental_score": {
+      "value": 49,
+      "label": "Experimental consistency index (not calibrated, not a probability)"
+    }
+  },
+  "graph": {
+    "nodes": [
+      { "id": "in_1", "type": "input", "label": "chennai_flood.mp4", "status": null, "meta": { "mime": "video/mp4" } },
+      { "id": "c1", "type": "claim", "label": "Flooding", "status": "contradiction", "meta": { "claim_type": "weather_condition" } },
+      { "id": "c2", "type": "claim", "label": "Chennai", "status": "contradiction", "meta": { "claim_type": "location" } },
+      { "id": "c3", "type": "claim", "label": "Yesterday evening", "status": "contradiction", "meta": { "claim_type": "time" } },
+      { "id": "f_prior_1", "type": "witness", "label": "Prior appearance", "status": "contradiction", "meta": { "family": "context", "reliability": "high" } },
+      { "id": "f_weather_1", "type": "witness", "label": "Weather", "status": "contradiction", "meta": { "family": "context", "reliability": "medium" } },
+      { "id": "f_metadata_1", "type": "witness", "label": "Metadata", "status": "inconclusive", "meta": { "family": "context", "reliability": "low" } },
+      { "id": "f_enf_1", "type": "witness", "label": "Power-grid hum", "status": "insufficient_signal", "meta": { "family": "signal", "reliability": "low" } },
+      { "id": "f_lipsync_1", "type": "witness", "label": "Lip-sync", "status": "not_applicable", "meta": { "family": "signal", "reliability": "low" } },
+      { "id": "f_ela_1", "type": "witness", "label": "ELA", "status": "inconclusive", "meta": { "family": "pixels", "reliability": "low" } }
+    ],
+    "edges": [
+      { "id": "e1", "source": "in_1", "target": "c1", "relation": "derived_from" },
+      { "id": "e2", "source": "in_1", "target": "c2", "relation": "derived_from" },
+      { "id": "e3", "source": "in_1", "target": "c3", "relation": "derived_from" },
+      { "id": "e4", "source": "f_prior_1", "target": "c2", "relation": "contradicts" },
+      { "id": "e5", "source": "f_prior_1", "target": "c3", "relation": "contradicts" },
+      { "id": "e6", "source": "f_weather_1", "target": "c1", "relation": "contradicts" },
+      { "id": "e7", "source": "f_weather_1", "target": "c2", "relation": "contradicts" },
+      { "id": "e8", "source": "f_weather_1", "target": "c3", "relation": "contradicts" },
+      { "id": "e9", "source": "f_metadata_1", "target": "c2", "relation": "inconclusive" },
+      { "id": "e10", "source": "f_metadata_1", "target": "c3", "relation": "inconclusive" },
+      { "id": "e11", "source": "f_enf_1", "target": "c2", "relation": "inconclusive" },
+      { "id": "e12", "source": "f_ela_1", "target": "in_1", "relation": "inconclusive" }
+    ]
+  },
+  "history": [
+    { "ts": "2026-11-19T10:15:00+05:30", "event": "file_received", "detail": "chennai_flood.mp4 sha256=3b7e9c1d…1a2b3c (stored read-only)" },
+    { "ts": "2026-11-19T10:15:01+05:30", "event": "claims_extracted", "detail": "3 claims via rules (location, time, weather_condition)" },
+    { "ts": "2026-11-19T10:15:01+05:30", "event": "witness_completed", "detail": "metadata: inconclusive (240 ms)" },
+    { "ts": "2026-11-19T10:15:02+05:30", "event": "witness_completed", "detail": "weather: contradiction (812 ms)" },
+    { "ts": "2026-11-19T10:15:03+05:30", "event": "witness_completed", "detail": "prior_appearance: contradiction (1430 ms)" },
+    { "ts": "2026-11-19T10:15:04+05:30", "event": "witness_completed", "detail": "enf: insufficient_signal (655 ms)" },
+    { "ts": "2026-11-19T10:15:05+05:30", "event": "witness_completed", "detail": "lipsync: not_applicable (980 ms)" },
+    { "ts": "2026-11-19T10:15:05+05:30", "event": "witness_completed", "detail": "ela: inconclusive (310 ms)" },
+    { "ts": "2026-11-19T10:15:05+05:30", "event": "assessment_computed", "detail": "context_not_supported; human_review=priority" }
+  ]
+}
