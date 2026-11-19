@@ -11,8 +11,7 @@ import {
 } from "@xyflow/react";
 import type { ReactNode } from "react";
 import "@xyflow/react/dist/style.css";
-
-import investigation from "../../../../shared/fixtures/sample_investigation.json";
+import type { Graph } from "@/lib/types";
 
 const statusColors: Record<string, string> = {
   contradiction: "#D96B68",
@@ -22,16 +21,11 @@ const statusColors: Record<string, string> = {
   not_applicable: "#626975",
 };
 
-const claims = investigation.graph.nodes.filter(
-  (node) => node.type === "claim"
-);
+export default function EvidenceGraph({ graph }: { graph: Graph }) {
+  const claims = graph.nodes.filter((node) => node.type === "claim");
+  const witnesses = graph.nodes.filter((node) => node.type === "witness");
 
-const witnesses = investigation.graph.nodes.filter(
-  (node) => node.type === "witness"
-);
-
-const nodes: Node<{ label: ReactNode }>[] = investigation.graph.nodes.map(
-  (item) => {
+  const nodes: Node<{ label: ReactNode }>[] = graph.nodes.map((item) => {
     const index =
       item.type === "claim"
         ? claims.findIndex((node) => node.id === item.id)
@@ -45,6 +39,7 @@ const nodes: Node<{ label: ReactNode }>[] = investigation.graph.nodes.map(
           : { x: 810, y: index * 105 + 10 };
 
     const color = statusColors[item.status ?? ""] ?? "#64748b";
+    const reliability = item.meta?.reliability;
 
     return {
       id: item.id,
@@ -63,9 +58,9 @@ const nodes: Node<{ label: ReactNode }>[] = investigation.graph.nodes.map(
                 {item.status.replaceAll("_", " ")}
               </p>
             )}
-            {item.meta?.reliability && (
+            {typeof reliability === "string" && (
               <p className="mt-1 text-[10px] text-zinc-500">
-                Reliability: {item.meta.reliability}
+                Reliability: {reliability}
               </p>
             )}
           </div>
@@ -74,53 +69,53 @@ const nodes: Node<{ label: ReactNode }>[] = investigation.graph.nodes.map(
       style: {
         width: 220,
         padding: 14,
-        background: "#151a22",
+        background: "#15191D",
         border:
-      item.status === "insufficient_signal"
-    ? `2px dashed ${color}99`
-    : `1px solid ${color}66`,
+          item.status === "insufficient_signal"
+            ? `2px dashed ${color}99`
+            : `1px solid ${color}66`,
       },
     };
-  }
-);
+  });
 
-const edges: Edge[] = investigation.graph.edges.map((edge) => {
-  const isContradiction = edge.relation === "contradicts";
-const isSupport = edge.relation === "supports";
+  const edges: Edge[] = graph.edges.map((edge) => {
+    const isContradiction = edge.relation === "contradicts";
+    const isSupport = edge.relation === "supports";
+    const edgeColor = isContradiction
+      ? "#D96B68"
+      : isSupport
+        ? "#69B88A"
+        : "#929CAA";
 
-  return {
-    id: edge.id,
-    source: edge.source,
-    target: edge.target,
-    type: "smoothstep",
-    label: edge.relation.replaceAll("_", " "),
-    markerEnd: {
-      type: MarkerType.ArrowClosed,
-      color: isContradiction
-  ? "#dc6666"
-  : isSupport
-    ? "#65a98a"
-    : "#737b88",
-    },
-    style: {
-      stroke: isContradiction ? "#dc6666" : "#737b88",
-      strokeWidth: 1.4,
-      strokeDasharray: edge.relation === "inconclusive" ? "5 5" : undefined,
-    },
-    labelStyle: {
-      fill: "#a1a1aa",
-      fontSize: 9,
-    },
-    labelBgStyle: {
-      fill: "#090b10",
-      fillOpacity: 0.95,
-    },
-  };
-});
+    return {
+      id: edge.id,
+      source: edge.source,
+      target: edge.target,
+      type: "smoothstep",
+      label: edge.relation.replaceAll("_", " "),
+      markerEnd: {
+        type: MarkerType.ArrowClosed,
+        color: edgeColor,
+      },
+      style: {
+        stroke: edgeColor,
+        strokeWidth: 1.4,
+        strokeDasharray:
+          edge.relation === "inconclusive" ? "5 5" : undefined,
+      },
+      labelStyle: {
+        fill: "#a1a1aa",
+        fontSize: 9,
+      },
+      labelBgStyle: {
+        fill: "#090b10",
+        fillOpacity: 0.95,
+      },
+    };
+  });
 
-export default function EvidenceGraph() {
   return (
-    <section className="overflow-hidden rounded-lg border border-white/10 bg-[#0d1017]">
+    <section className="overflow-hidden rounded-lg border border-white/10 bg-[#0D1012]">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-5 py-4">
         <div>
           <h2 className="text-sm font-semibold text-zinc-200">
@@ -150,7 +145,7 @@ export default function EvidenceGraph() {
           <Background color="#303640" gap={24} size={1} />
           <Controls
             showInteractive={false}
-            className="!border-white/10 !bg-[#151a22] !fill-zinc-300"
+            className="!border-white/10 !bg-[#15191D] !fill-zinc-300"
           />
         </ReactFlow>
       </div>

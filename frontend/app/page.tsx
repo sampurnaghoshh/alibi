@@ -2,10 +2,10 @@
 import investigation from "../../shared/fixtures/sample_investigation.json";
 
 const statusStyles: Record<string, string> = {
-  contradiction: "border-red-500/30 bg-red-500/10 text-red-400",
-  consistent: "border-emerald-500/30 bg-emerald-500/10 text-emerald-400",
+  contradiction: "border-red-500/30 bg-red-500/10 text-[#D96B68]",
+  consistent: "border-emerald-500/30 bg-emerald-500/10 text-[#69B88A]",
   inconclusive: "border-zinc-500/30 bg-zinc-500/10 text-zinc-400",
-  insufficient_signal: "border-amber-500/30 bg-amber-500/10 text-amber-400",
+  insufficient_signal: "border-amber-500/30 bg-amber-500/10 text-[#929CAA]",
   not_applicable: "border-zinc-700 bg-zinc-800/50 text-zinc-500",
 };
 
@@ -21,8 +21,8 @@ export default function Home() {
   const { assessment, findings, claims, inputs } = investigation;
 
   return (
-    <main className="min-h-screen bg-[#090b10] text-zinc-100">
-      <header className="border-b border-white/10 bg-[#0d1017]">
+    <main className="min-h-screen bg-[#0D1012] text-zinc-100">
+      <header className="border-b border-white/10 bg-[#15191D]">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-5">
           <div>
             <h1 className="text-2xl font-bold tracking-[0.25em]">
@@ -43,12 +43,12 @@ export default function Home() {
         <section>
           <div className="mb-3 flex items-center gap-2">
             <span className="h-2 w-2 rounded-full bg-red-400" />
-            <p className="text-xs font-semibold tracking-[0.2em] text-red-400">
+            <p className="text-xs font-semibold tracking-[0.2em] text-[#D96B68]">
               PRIORITY HUMAN REVIEW
             </p>
           </div>
 
-          <div className="rounded-xl border border-red-500/20 bg-[#131720] p-6">
+          <div className="rounded-xl border border-red-500/20 bg-[#15191D] p-6">
             <p className="mb-3 text-xs tracking-widest text-zinc-500">
               INVESTIGATION ASSESSMENT
             </p>
@@ -64,13 +64,13 @@ export default function Home() {
 
         <section className="grid grid-cols-2 gap-3 md:grid-cols-5">
           {[
-            ["Contradictions", assessment.counts.contradiction, "text-red-400"],
-            ["Consistent", assessment.counts.consistent, "text-emerald-400"],
+            ["Contradictions", assessment.counts.contradiction, "text-[#D96B68]"],
+            ["Consistent", assessment.counts.consistent, "text-[#69B88A]"],
             ["Inconclusive", assessment.counts.inconclusive, "text-zinc-300"],
-            ["Insufficient signal", assessment.counts.insufficient_signal, "text-amber-400"],
+            ["Insufficient signal", assessment.counts.insufficient_signal, "text-[#929CAA]"],
             ["Not applicable", assessment.counts.not_applicable, "text-zinc-500"],
           ].map(([label, value, color]) => (
-            <div key={label} className="rounded-xl border border-white/10 bg-[#131720] p-4">
+            <div key={label} className="rounded-xl border border-white/10 bg-[#15191D] p-4">
               <p className="text-xs text-zinc-500">{label}</p>
               <p className={`mt-2 text-3xl font-semibold ${color}`}>
                 {value}
@@ -80,7 +80,7 @@ export default function Home() {
         </section>
 
         <section className="grid gap-5 md:grid-cols-3">
-          <div className="rounded-xl border border-white/10 bg-[#131720] p-5">
+          <div className="rounded-xl border border-white/10 bg-[#15191D] p-5">
             <p className="text-xs tracking-widest text-zinc-500">
               EXPERIMENTAL INDEX
             </p>
@@ -93,7 +93,7 @@ export default function Home() {
             </p>
           </div>
 
-          <div className="rounded-xl border border-white/10 bg-[#131720] p-5 md:col-span-2">
+          <div className="rounded-xl border border-white/10 bg-[#15191D] p-5 md:col-span-2">
             <p className="text-xs tracking-widest text-zinc-500">
               MEDIA INPUT
             </p>
@@ -120,7 +120,7 @@ export default function Home() {
 
           <div className="grid gap-3 md:grid-cols-3">
             {claims.map((claim) => (
-              <div key={claim.id} className="rounded-xl border border-white/10 bg-[#131720] p-5">
+              <div key={claim.id} className="rounded-xl border border-white/10 bg-[#15191D] p-5">
                 <p className="text-xs uppercase tracking-widest text-zinc-500">
                   {claim.type.replace("_", " ")}
                 </p>
@@ -143,7 +143,7 @@ export default function Home() {
             {findings.map((finding) => (
               <article
                 key={finding.id}
-                className={`rounded-xl border border-white/10 bg-[#131720] p-5 ${
+                className={`rounded-xl border border-white/10 bg-[#15191D] p-5 ${
                   finding.status === "not_applicable" ? "opacity-60" : ""
                 }`}
               >
@@ -182,3 +182,4 @@ export default function Home() {
     </main>
   );
 }
+

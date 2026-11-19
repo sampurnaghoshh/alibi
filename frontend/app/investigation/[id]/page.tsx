@@ -181,7 +181,7 @@ if (lastEnd < caption.length) {
             ))}
           </div>
         </section>
-        <EvidenceGraph />
+        <EvidenceGraph graph={investigation.graph} />
 
         <section>
           <div className="mb-4 flex items-center justify-between">
