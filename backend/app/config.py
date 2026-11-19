@@ -83,6 +83,21 @@ FORBIDDEN_WORDS_RE = r"\b(fake|real|authentic\w*|proven|definitely|AI-generated)
 # Explanations (§7.6): let the LLM reword titles/summaries. Off unless a provider is configured.
 LLM_EXPLAIN = os.getenv("ALIBI_LLM_EXPLAIN", "1") == "1"
 
+# ELA (§6.7, taken over from Adithi): ALWAYS inconclusive, reliability low, a weak indicator.
+# The hotspot values only choose the wording and the highlighted region; they never change the status.
+ELA_JPEG_QUALITY = 90
+ELA_AMPLIFICATION = 15
+ELA_BLOCK_PX = 16                    # error levels are compared per 16x16 block
+ELA_HOTSPOT_RATIO = 3.0              # block mean >= 3x the median block -> "hotspot" block
+ELA_HOTSPOT_MIN_LEVEL = 2.0          # ... and >= 2 (of 255, before amplification), ignores near-zero noise
+ELA_HOTSPOT_MAX_FRACTION = 0.5       # hotspots covering > 50% of the frame are not "localised"
+ELA_MAX_INPUTS = 3                   # analyse at most this many images/videos per investigation
+
+# Archive builder (§6.4, scripts/build_archive.py, taken over from Adithi).
+# Hand-edited list of verified clips; the builder adds frame hashes and writes ARCHIVE_JSON.
+# Sampling must match the prior_appearance witness: both use app/media.py with PRIOR_SAMPLE_FPS.
+ARCHIVE_MANIFEST = DATA_DIR / "archive" / "manifest.json"
+
 # Runtime LLM (claim extraction + explanations only; never decides truth)
 LLM_PROVIDER = os.getenv("ALIBI_LLM_PROVIDER", "none").strip().lower()   # anthropic | gemini | none
 LLM_MODEL = os.getenv("ALIBI_LLM_MODEL", "").strip()
@@ -164,6 +179,4 @@ PRIOR_MIN_MATCHED_FRAMES = 3         # clip match if >= 3 frames ...
 PRIOR_MIN_MATCHED_FRACTION = 0.30    # ... or >= 30% of sampled frames
 ARCHIVE_JSON = ARCHIVE_DIR / "archive.json"
 
-# ELA (§6.7): always inconclusive, reliability low
-ELA_JPEG_QUALITY = 90
-ELA_AMPLIFICATION = 15
+# ELA moved to the Sampurna section (handed over by Adithi).

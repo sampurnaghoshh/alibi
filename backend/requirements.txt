@@ -13,7 +13,7 @@ requests>=2.31
 dateparser>=1.2
 
 # Image / video
-opencv-python>=4.9
+opencv-contrib-python>=4.9   # superset of opencv-python; mediapipe needs contrib, and both together clash over cv2
 imagehash>=4.3
 Pillow>=10.0
 mediapipe>=0.10.14

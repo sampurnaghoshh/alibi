@@ -49,9 +49,9 @@ ALIBI treats each kind of evidence (caption text, metadata, weather records, ear
 
 | Person | AI tools | Owns | Files |
 |---|---|---|---|
-| **Sampurna** (lead) | Claude Code (Opus) in VS Code | Repo skeleton, **evidence contract**, **rule engine**, graph builder, FastAPI app, storage, report, integration, final merges | `backend/app/main.py`, `schemas.py`, `engine/*`, `storage.py`, `report.py`, `shared/*` |
+| **Sampurna** (lead) | Claude Code (Opus) in VS Code | Repo skeleton, **evidence contract**, **rule engine**, graph builder, FastAPI app, storage, report, integration, final merges, **ELA witness** and **archive builder** (taken over from Adithi) | `backend/app/main.py`, `schemas.py`, `engine/*`, `storage.py`, `report.py`, `pipeline.py`, `media.py`, `shared/*`, `witnesses/ela.py`, `scripts/build_archive.py`, `scripts/warm_cache.py` |
 | **Nooman** | Claude Code (Opus) in VS Code | **Claim extraction** (LLM + rule fallback), **lip-sync witness**, **ENF audio witness** (conditional), calibration scripts | `backend/app/claims/*`, `witnesses/lipsync.py`, `witnesses/enf.py`, `scripts/calibrate_*.py`, `scripts/test_enf.py` |
-| **Adithi** | Free LLMs | **Metadata witness**, **weather witness**, **prior-appearance witness**, ELA (only if time), archive builder | `witnesses/metadata.py`, `witnesses/weather.py`, `witnesses/prior_appearance.py`, `witnesses/ela.py`, `scripts/build_archive.py` |
+| **Adithi** | Free LLMs | **Metadata witness**, **weather witness**, **prior-appearance witness** | `witnesses/metadata.py`, `witnesses/weather.py`, `witnesses/prior_appearance.py` |
 | **Dhruva** | Free LLMs | **Entire frontend**: upload page, investigation dashboard, contradiction graph, witness cards, evidence drawer, report view, demo polish | `frontend/*` |
 
 **Rule:** don't edit files you don't own. Need a change elsewhere? Message the owner. Contract changes (`schemas.py`, `shared/contract.schema.json`, `shared/fixtures/*`) are made **only by Sampurna** and announced in the group.
@@ -203,7 +203,7 @@ A list, newest first. Fetch the full `Investigation` by `id` for anything else. 
 | 4 | Prior appearance (perceptual-hash archive) | Adithi | **Must** | high |
 | 5 | Lip-sync synchrony indicator | Nooman | **Must** | medium |
 | 6 | ENF power-grid hum | Nooman | **Conditional** on the hour-1 test | medium |
-| 7 | ELA heatmap | Adithi | Only if time | low (always) |
+| 7 | ELA heatmap | Sampurna (from Adithi) | Done | low (always) |
 | — | Solar/shadow analysis | — | **Roadmap slide only** | — |
 | — | Extra deepfake classifiers | — | **Skip** | — |
 
@@ -263,9 +263,10 @@ All thresholds below are **starting values. Calibrate them on genuine clips** an
 - Always list as alternatives: upstream/catchment rain, drainage failure, reservoir release, and localised rain below grid resolution.
 - Cache responses to `data/cache/` so the demo works offline once warmed up.
 
-### 6.4 Prior appearance (Adithi): `witnesses/prior_appearance.py` + `scripts/build_archive.py`
+### 6.4 Prior appearance (witness: Adithi, `witnesses/prior_appearance.py`; archive builder: Sampurna, `scripts/build_archive.py`)
 - Archive: `data/archive/archive.json` plus the source clips. Each entry: `{ "clip_id", "title", "verified_date", "verified_location", "verified_by", "source_note", "frame_hashes": [hex...] }`.
-- `build_archive.py`: for each clip, sample 1 frame/s (OpenCV), compute `imagehash.phash` (64-bit), store the hashes.
+- `build_archive.py` (done): reads the hand-edited `data/archive/manifest.json` (format in the script's docstring; clip paths are relative to `data/archive/`), samples 1 frame/s, computes `imagehash.phash` (64-bit, 16 hex chars), and writes `archive.json` as `{ "built_at", "sample_fps", "hash", "clips": [entry, ...] }`. Each entry also has `frame_times_s` (same order as `frame_hashes`), `sha256`, `duration_s`, `sample_fps`, and optional `verified_lat`/`verified_lon` for distance checks. Run: `backend\.venv\Scripts\python.exe scripts\build_archive.py`.
+- **Use `app/media.py` in the witness:** `sample_frames(path, config.PRIOR_SAMPLE_FPS)` → `[(t, image)]`, `phash_hex(image)`, `hamming(a, b)`. The archive was built with the same functions, so hashes are comparable.
 - Witness: sample the uploaded video the same way (images = 1 frame). A frame matches when Hamming distance ≤ 8. A clip matches when ≥ 3 frames, or ≥ 30% of sampled frames, match the same archive entry.
 - Rules:
   - Match **and** the verified date or location disagrees with the claim → `contradiction` (**high**). Title: "Frames match a clip verified as recorded in {place} on {date}".
@@ -296,7 +297,7 @@ All thresholds below are **starting values. Calibrate them on genuine clips** an
 - Artifact: spectrogram PNG zoomed to 40–130 Hz with the hum line marked.
 - Alternatives: phone noise suppression removes hum; outdoor or battery-only environments have none; imported equipment.
 
-### 6.7 ELA (Adithi, only if time): `witnesses/ela.py`
+### 6.7 ELA (Sampurna, taken over from Adithi; done): `witnesses/ela.py`
 - Images, or a video keyframe. Re-save as JPEG q=90, take the absolute difference ×15 → heatmap PNG artifact.
 - **Always `inconclusive`, reliability `low`**, listed under `weak_indicators`. ELA is a visual aid, not a verdict.
 
