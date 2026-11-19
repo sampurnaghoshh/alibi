@@ -398,3 +398,17 @@ SYNTH_CUTOFF_MAX_HZ = 12500          # ... at or below 12.5 kHz (8 / 11 / 12 kHz
 SYNTH_FLATNESS_MAX = 0.002           # median spectral flatness of the louder frames at or below: very tonal
 SYNTH_AUDIO_WEAK_COUNT = 2           # 2 audio indicators = weak (one alone is common: WhatsApp cuts at ~5.5 kHz)
 SYNTH_AUDIO_STRONG_COUNT = 3         # all 3 = strong (still never a contradiction)
+
+# Splice / compositing localisation (part of synthetic_signals; indicator only, never a contradiction)
+SPLICE_BLOCK_PX = 32
+SPLICE_FLAT_QUANTILE = 0.7           # only the flatter 70% of blocks (edges and texture dominate the rest)
+SPLICE_Z = 3.5                       # a block is inconsistent at |robust z| >= 3.5 of log residual sd
+SPLICE_MIN_BLOCKS = 4                # region size: at least 4 blocks ...
+SPLICE_MAX_FRACTION = 0.25           # ... and at most a quarter of the picture
+SPLICE_ELA_AGREE_RATIO = 1.5         # error level in the region >= 1.5x the rest -> agrees with ELA (reliability medium)
+
+# Speech-to-text (spoken claims): faster-whisper "tiny" multilingual, CPU int8, first 30 s of the first
+# audio/video input. Weights: scripts/download_models.py -> data/models/faster-whisper-tiny (MIT licence).
+WHISPER_MODEL_DIR = Path(os.getenv("ALIBI_WHISPER_DIR", DATA_DIR / "models" / "faster-whisper-tiny"))
+WHISPER_MAX_S = 30.0
+WHISPER_MIN_CHARS = 3                # shorter transcripts count as no speech

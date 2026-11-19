@@ -230,11 +230,14 @@
     },
     "ClaimSource": {
       "additionalProperties": false,
-      "description": "Exact character span of the caption that produced the claim (principle 3).",
+      "description": "Exact character span of the caption (or of the speech transcript) that produced the claim (principle 3).",
       "properties": {
         "field": {
-          "const": "caption",
           "default": "caption",
+          "enum": [
+            "caption",
+            "transcript"
+          ],
           "title": "Field",
           "type": "string"
         },
@@ -837,6 +840,92 @@
       "title": "TimestampLocation",
       "type": "object"
     },
+    "Transcript": {
+      "additionalProperties": false,
+      "description": "Speech-to-text of the first audio/video input (first 30 s). Claims with source.field == \"transcript\"\npoint at character spans of `text`. status != \"ok\" means no transcript claims, with the reason in `note`.",
+      "properties": {
+        "status": {
+          "enum": [
+            "ok",
+            "no_speech",
+            "unavailable",
+            "failed"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "file_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "File Id"
+        },
+        "text": {
+          "default": "",
+          "title": "Text",
+          "type": "string"
+        },
+        "language": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Language"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "span_s": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "seconds of audio transcribed",
+          "title": "Span S"
+        },
+        "note": {
+          "default": "",
+          "title": "Note",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "file_id",
+        "text",
+        "language",
+        "model",
+        "span_s",
+        "note"
+      ],
+      "title": "Transcript",
+      "type": "object"
+    },
     "InvestigationSummary": {
       "additionalProperties": false,
       "description": "One row of the history list. Fetch the full Investigation by id for details.",
@@ -989,6 +1078,17 @@
       },
       "title": "History",
       "type": "array"
+    },
+    "transcript": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Transcript"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     }
   },
   "required": [
@@ -1002,7 +1102,8 @@
     "findings",
     "assessment",
     "graph",
-    "history"
+    "history",
+    "transcript"
   ],
   "title": "Investigation",
   "type": "object"

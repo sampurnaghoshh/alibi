@@ -791,25 +791,46 @@
   }
 
   // ------------------------------------------------------------------ caption, assessment, panels
-  function showCaption(caption, claims) {
-    var p = $("caption");
-    p.innerHTML = "";
-    if (!caption) {                                      // file-only run
-      p.appendChild(el("span", "nocap", "No caption: file-only analysis"));
-      $("claims").innerHTML = "";
-      return;
-    }
+  function spans(p, text, claims) {   // text with each claim's exact span underlined (clickable)
     var pos = 0;
     claims.slice().sort(function (a, b) { return a.source.start - b.source.start; }).forEach(function (c) {
-      if (c.source.start < pos || c.source.end > caption.length) return;   // no caption text (e.g. reopened mid-run)
-      p.appendChild(document.createTextNode(caption.slice(pos, c.source.start)));
-      var m = el("mark", "", caption.slice(c.source.start, c.source.end));
+      if (c.source.start < pos || c.source.end > text.length) return;   // no text yet (e.g. reopened mid-run)
+      p.appendChild(document.createTextNode(text.slice(pos, c.source.start)));
+      var m = el("mark", "", text.slice(c.source.start, c.source.end));
       m.setAttribute("data-claim", c.id);
       m.addEventListener("click", function (e) { e.stopPropagation(); toggleSelect("claim", c.id); });
       p.appendChild(m);
       pos = c.source.end;
     });
-    p.appendChild(document.createTextNode(caption.slice(pos)));
+    p.appendChild(document.createTextNode(text.slice(pos)));
+  }
+
+  function showTranscript(claims) {   // spoken claims: the speech-to-text transcript with its claim spans
+    var p = $("transcript"), tr = current && current.transcript;
+    p.innerHTML = "";
+    if (!tr) { p.hidden = true; return; }
+    p.appendChild(el("span", "tr-k", "Spoken"));
+    if (tr.status === "ok") {
+      spans(p, tr.text, claims.filter(function (c) { return c.source.field === "transcript"; }));
+      p.title = tr.text + "\n" + tr.note;
+    } else {
+      p.appendChild(el("span", "tr-note", tr.note));
+      p.title = tr.note;
+    }
+    p.hidden = false;
+  }
+
+  function showCaption(caption, claims) {
+    var p = $("caption");
+    p.innerHTML = "";
+    showTranscript(claims);
+    if (!caption) {                                      // file-only run
+      p.appendChild(el("span", "nocap", "No caption: file-only analysis"));
+      $("claims").innerHTML = "";
+      claims.forEach(function (c) { $("claims").appendChild(claimTag(c)); });
+      return;
+    }
+    spans(p, caption, claims.filter(function (c) { return c.source.field !== "transcript"; }));
     var box = $("claims");
     box.innerHTML = "";
     if (!claims.length) box.appendChild(el("span", "tag", "No checkable claim in the caption"));
@@ -951,6 +972,7 @@
     $("counts").innerHTML = "";
     $("compare").hidden = true;
     $("auth").hidden = true;
+    $("transcript").hidden = true;
     $("timemachine").hidden = true;
     hideDetail();
     toggleDrawer(false);
@@ -984,6 +1006,10 @@
       if (d.copied_from) { current.parentId = current.parentId || d.copied_from; setRerun(true); }
       $("file-name").textContent = current.inputs.map(function (i) { return i.name; }).join(", ");
       if (current.cy) ensureNode(current.cy, d.input.file_id, "input", d.input.name);
+    });
+    on("transcribed", function (d) {
+      current.transcript = d.transcript || null;
+      showTranscript(current.claims || []);
     });
     on("claims_extracted", function (d) {
       current.claims = d.claims || [];

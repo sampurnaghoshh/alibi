@@ -36,7 +36,7 @@ def test_photo_like_jpeg_with_camera_fields_is_never_a_contradiction(tmp_path):
     exif = Image.Exif()
     exif[271], exif[272] = "Apple", "iPhone 15"
     img.save(p, quality=92, exif=exif)
-    [f] = W.run(_ctx(tmp_path, p, "image/jpeg"))
+    f = next(x for x in W.run(_ctx(tmp_path, p, "image/jpeg")) if x.details["check"] == "image")
     assert f.status == "consistent" and f.reliability == "low" and f.details["strength"] == "none"
     assert f.details["camera"]["camera_fields"] and f.alternatives and f.limitations
     for e in f.evidence:                                      # spectrum + noise map saved as artifacts
@@ -48,7 +48,7 @@ def test_flat_screenshot_like_png_is_only_a_weak_signal(tmp_path):
     arr = np.full((400, 600), 200, np.uint8)
     arr[100:300, 150:450] = 60                                # flat shapes, no noise at all
     Image.fromarray(arr).convert("RGB").save(p)
-    [f] = W.run(_ctx(tmp_path, p, "image/png"))
+    f = next(x for x in W.run(_ctx(tmp_path, p, "image/png")) if x.details["check"] == "image")
     assert f.status == "inconclusive" and f.details["strength"] == "weak"
     assert any("sensor noise" in r for r in f.details["reasons"])
     assert any("camera" in r for r in f.details["reasons"])
@@ -125,8 +125,8 @@ def test_audio_tts_like_indicators(tmp_path):
 def test_broken_file_gives_an_inconclusive_finding(tmp_path):
     p = tmp_path / "broken.png"
     p.write_bytes(b"not an image")
-    [f] = W.run(_ctx(tmp_path, p, "image/png"))
-    assert f.status == "inconclusive" and f.reliability == "low" and "Error" in f.limitations[0]
+    fs = W.run(_ctx(tmp_path, p, "image/png"))
+    assert fs and all(f.status == "inconclusive" and f.reliability == "low" and "Error" in f.limitations[0] for f in fs)
 
 
 # --- the AI & manipulation badge ------------------------------------------------------------
@@ -160,3 +160,24 @@ def test_badge_strong_weak_and_none():
 def test_alternatives_never_empty(cls):
     alts = {"image": ss.IMAGE_ALTERNATIVES, "video": ss.VIDEO_ALTERNATIVES, "audio": ss.AUDIO_ALTERNATIVES}[cls]
     assert alts and ss.LIMITATIONS
+
+
+# --- splice / compositing localisation ------------------------------------------------------
+
+def test_spliced_region_is_boxed_and_clean_image_is_not(tmp_path):
+    clean = _photo_like(5)
+    spliced = clean.copy()
+    yy, xx = np.mgrid[0:160, 0:160]
+    spliced[256:416, 64:224] = 130 + 4 * np.sin(xx / 40.0)       # a flat, noise-free pasted patch
+    for name, arr in (("clean.png", clean), ("spliced.png", spliced)):
+        Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8)).convert("RGB").save(tmp_path / name)
+    sp, _ = ss.splice_analysis(Image.open(tmp_path / "spliced.png"))
+    assert sp["bbox"] is not None
+    x, y, w, h = sp["bbox"]
+    assert x < 224 / 512 and x + w > 64 / 512 and y < 416 / 512 and y + h > 256 / 512    # overlaps the patch
+    clean_sp, _ = ss.splice_analysis(Image.open(tmp_path / "clean.png"))
+    assert clean_sp["bbox"] is None
+    fs = W.run(_ctx(tmp_path, tmp_path / "spliced.png", "image/png"))
+    f = next(x for x in fs if x.details["check"] == "splice")
+    assert f.status == "inconclusive" and f.locations and "pasted-in" in f.title
+    assert (tmp_path / f.details["inconsistency_map"]).is_file() and f.alternatives

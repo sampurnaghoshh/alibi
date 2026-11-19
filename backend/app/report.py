@@ -153,20 +153,34 @@ def _size(n: int) -> str:
 
 # --- sections ------------------------------------------------------------------
 
-def _caption_html(inv: Investigation) -> str:
-    """Caption with each claim span wrapped in <mark>. Overlapping spans: first one wins."""
-    if not inv.caption:
-        return '<p class="muted">No caption was provided.</p>'
+def _marked(text: str, claims) -> str:
+    """Text with each claim span wrapped in <mark>. Overlapping spans: first one wins."""
     out, pos = [], 0
-    for c in sorted(inv.claims, key=lambda c: (c.source.start, -c.source.end)):
+    for c in sorted(claims, key=lambda c: (c.source.start, -c.source.end)):
         s, t = c.source.start, c.source.end
-        if s < pos:
+        if s < pos or t > len(text):
             continue
-        out.append(e(inv.caption[pos:s]))
-        out.append(f'<mark title="{e(c.id)} · {e(c.type)}">{e(inv.caption[s:t])}<sup>{e(c.id)}</sup></mark>')
+        out.append(e(text[pos:s]))
+        out.append(f'<mark title="{e(c.id)} · {e(c.type)}">{e(text[s:t])}<sup>{e(c.id)}</sup></mark>')
         pos = t
-    out.append(e(inv.caption[pos:]))
-    return f'<div class="caption">{"".join(out)}</div>'
+    out.append(e(text[pos:]))
+    return "".join(out)
+
+
+def _caption_html(inv: Investigation) -> str:
+    """Caption with its claim spans marked, then the speech transcript (spoken claims), if any."""
+    if inv.caption:
+        html = f'<div class="caption">{_marked(inv.caption, [c for c in inv.claims if c.source.field == "caption"])}</div>'
+    else:
+        html = '<p class="muted">No caption was provided.</p>'
+    tr = inv.transcript
+    if tr is not None:
+        body = (_marked(tr.text, [c for c in inv.claims if c.source.field == "transcript"])
+                if tr.status == "ok" else "")
+        html += ('<h3>Spoken (speech-to-text transcript)</h3>'
+                 + (f'<div class="caption">{body}</div>' if body else "")
+                 + f'<p class="muted">{e(tr.note)}</p>')
+    return html
 
 
 def _tz_name(d: datetime) -> str:

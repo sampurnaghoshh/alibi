@@ -283,5 +283,6 @@
     { "ts": "2026-11-19T10:15:05+05:30", "event": "witness_completed", "detail": "lipsync: not_applicable (980 ms)" },
     { "ts": "2026-11-19T10:15:05+05:30", "event": "witness_completed", "detail": "ela: inconclusive (310 ms)" },
     { "ts": "2026-11-19T10:15:05+05:30", "event": "assessment_computed", "detail": "context_not_supported; human_review=priority" }
-  ]
+  ],
+  "transcript": null
 }

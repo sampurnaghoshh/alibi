@@ -19,6 +19,22 @@ const WITNESS_ICON: Record<string, LucideIcon> = {
   synthetic_signals: Fingerprint,
 };
 
+// Text split into plain and highlighted parts at each claim's exact character span (principle 3).
+function splitSpans(text: string, spans: Investigation["claims"]) {
+  const parts: { text: string; highlighted: boolean }[] = [];
+  let pos = 0;
+  [...spans]
+    .sort((a, b) => a.source.start - b.source.start)
+    .forEach((c) => {
+      if (c.source.start < pos || c.source.end > text.length) return;
+      if (c.source.start > pos) parts.push({ text: text.slice(pos, c.source.start), highlighted: false });
+      parts.push({ text: text.slice(c.source.start, c.source.end), highlighted: true });
+      pos = c.source.end;
+    });
+  if (pos < text.length) parts.push({ text: text.slice(pos), highlighted: false });
+  return parts;
+}
+
 export function Problem({ title, message }: { title: string; message: string }) {
   return (
     <main className="min-h-screen bg-[#0D1012] text-zinc-100">
@@ -45,46 +61,12 @@ export default function InvestigationView({ investigation }: { investigation: In
 
 const caption = investigation.caption;
 
-const highlightedCaption = [...claims]
-  .sort((a, b) => a.source.start - b.source.start)
-  .reduce(
-    (parts, claim) => {
-      const previousEnd = parts[parts.length - 1].end;
-      const start = Math.max(previousEnd, claim.source.start);
-      const end = Math.max(start, claim.source.end);
-
-      if (start > previousEnd) {
-        parts.push({
-          text: caption.slice(previousEnd, start),
-          highlighted: false,
-          end: start,
-        });
-      }
-
-      if (end > start) {
-        parts.push({
-          text: caption.slice(start, end),
-          highlighted: true,
-          end,
-        });
-      }
-
-      return parts;
-    },
-    [{ text: "", highlighted: false, end: 0 }]
-  )
-  .slice(1);
-
-const lastEnd = highlightedCaption[highlightedCaption.length - 1]?.end ?? 0;
-
-if (lastEnd < caption.length) {
-  highlightedCaption.push({
-    text: caption.slice(lastEnd),
-    highlighted: false,
-    end: caption.length,
-  });
-}
-
+const highlightedCaption = splitSpans(caption, claims.filter((c) => c.source.field !== "transcript"));
+const transcript = investigation.transcript ?? null;
+const highlightedTranscript =
+  transcript?.status === "ok"
+    ? splitSpans(transcript.text, claims.filter((c) => c.source.field === "transcript"))
+    : [];
 
   return (
     <main className="min-h-screen bg-[#0D1012] text-zinc-100">
@@ -190,6 +172,28 @@ if (lastEnd < caption.length) {
     </p>
   )}
 </section>
+{transcript && (
+  <section className="rounded-xl border border-white/10 bg-[#131720] p-6">
+    <p className="mb-3 text-xs font-semibold tracking-widest text-zinc-500">SPOKEN (SPEECH-TO-TEXT TRANSCRIPT)</p>
+    {transcript.status === "ok" ? (
+      <p className="text-lg leading-relaxed text-zinc-300">
+        {highlightedTranscript.map((part, index) =>
+          part.highlighted ? (
+            <mark
+              key={index}
+              className="rounded bg-[#83B6D1]/15 px-1 text-[#9CC8DF] underline decoration-[#83B6D1]/60 underline-offset-4"
+            >
+              {part.text}
+            </mark>
+          ) : (
+            <span key={index}>{part.text}</span>
+          )
+        )}
+      </p>
+    ) : null}
+    <p className="mt-3 text-xs text-zinc-500">{transcript.note}</p>
+  </section>
+)}
 <section className="grid gap-5 md:grid-cols-3">
   {!summary?.caption_less && (
   <div className="rounded-xl border border-white/10 bg-[#131720] p-5">

@@ -24,6 +24,10 @@ soundfile>=0.12
 scipy>=1.11
 numpy>=1.26
 
+# Speech-to-text for spoken claims (optional: without it, transcription is skipped with a limitation).
+# Weights: scripts/download_models.py -> data/models/ (gitignored).
+faster-whisper>=1.0
+
 # Optional runtime LLM providers (claim extraction + explanations only)
 anthropic>=0.40
 google-genai>=1.0

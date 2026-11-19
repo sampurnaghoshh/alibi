@@ -9,7 +9,7 @@ export type FindingStatus =
 export type Reliability = "high" | "medium" | "low";
 
 export interface ClaimSource {
-  field: "caption";
+  field: "caption" | "transcript";
   start: number;
   end: number;
   text: string;
@@ -172,6 +172,7 @@ export interface Investigation {
   assessment: Assessment;
   graph: Graph;
   history: HistoryEvent[];
+  transcript?: Transcript | null;
 }
 
 export interface InvestigationSummary {
@@ -184,4 +185,14 @@ export interface InvestigationSummary {
   headline_text: string;
   counts: StatusCounts;
   human_review: "priority" | "standard";
+}
+
+export interface Transcript {
+  status: "ok" | "no_speech" | "unavailable" | "failed";
+  file_id: string | null;
+  text: string;
+  language: string | null;
+  model: string | null;
+  span_s: number | null;
+  note: string;
 }

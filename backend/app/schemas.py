@@ -155,9 +155,9 @@ def _normalized_json_schema(schema: dict[str, Any]) -> None:
 
 
 class ClaimSource(_Model):
-    """Exact character span of the caption that produced the claim (principle 3)."""
+    """Exact character span of the caption (or of the speech transcript) that produced the claim (principle 3)."""
 
-    field: Literal["caption"] = "caption"
+    field: Literal["caption", "transcript"] = "caption"
     start: int = Field(ge=0)
     end: int = Field(ge=1)
     text: str = Field(min_length=1)
@@ -336,6 +336,19 @@ def _dupes(ids: list[str]) -> set[str]:
     return {i for i in ids if i in seen or seen.add(i)}
 
 
+class Transcript(_Model):
+    """Speech-to-text of the first audio/video input (first 30 s). Claims with source.field == "transcript"
+    point at character spans of `text`. status != "ok" means no transcript claims, with the reason in `note`."""
+
+    status: Literal["ok", "no_speech", "unavailable", "failed"]
+    file_id: Optional[str] = None
+    text: str = ""
+    language: Optional[str] = None
+    model: Optional[str] = None
+    span_s: Optional[float] = Field(default=None, description="seconds of audio transcribed")
+    note: str = ""
+
+
 class Investigation(_Model):
     id: str = Field(pattern=INVESTIGATION_ID_PATTERN, description="inv_YYYYMMDD_HHMMSS_xxxx")
     created_at: AwareDatetime
@@ -351,6 +364,7 @@ class Investigation(_Model):
     assessment: Assessment
     graph: Graph = Field(default_factory=Graph)
     history: list[HistoryEvent] = Field(default_factory=list)
+    transcript: Optional[Transcript] = None
 
     @model_validator(mode="after")
     def _integrity(self) -> "Investigation":
@@ -364,11 +378,17 @@ class Investigation(_Model):
             if d := _dupes(ids):
                 errors.append(f"duplicate {label}: {sorted(d)}")
 
-        # Principle 3: every claim is traceable to an exact caption span.
+        # Principle 3: every claim is traceable to an exact caption (or transcript) span.
+        spoken = self.transcript.text if self.transcript else None
         for c in self.claims:
             s = c.source
-            if self.caption[s.start:s.end] != s.text:
+            if s.field == "transcript":
+                if spoken is None or spoken[s.start:s.end] != s.text:
+                    errors.append(f"claim {c.id}: transcript[{s.start}:{s.end}] is not {s.text!r}")
+            elif self.caption[s.start:s.end] != s.text:
                 errors.append(f"claim {c.id}: caption[{s.start}:{s.end}] is not {s.text!r}")
+        if self.transcript and self.transcript.file_id and self.transcript.file_id not in {i.file_id for i in self.inputs}:
+            errors.append(f"transcript file_id {self.transcript.file_id!r} is not an input")
 
         known_claims, known_files = set(claim_ids), set(file_ids)
         for f in self.findings:

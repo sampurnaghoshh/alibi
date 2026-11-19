@@ -57,6 +57,11 @@ AUDIO_ALTERNATIVES = [
     "Noise suppression in phones and meeting apps removes the background noise floor",
     "Re-encoding by messaging apps and platforms changes the spectrum",
 ]
+SPLICE_ALTERNATIVES = [
+    "Different lighting, shadows or exposure across the scene change the local noise level",
+    "Focus blur and depth of field make parts of a genuine photo smoother than the rest",
+    "Uneven compression, denoising or beauty filters change noise in some regions only",
+]
 LIMITATIONS = [
     "Signal-level indicators without a trained classifier; not calibrated on a large dataset",
     "Many generators, and any re-encoding, leave none of these signals, so their absence is not proof of anything",
@@ -226,6 +231,74 @@ def combine(signals: list[dict]) -> tuple[str, str]:
     return "none", "consistent"
 
 
+def splice_analysis(img: Image.Image) -> tuple[dict, Image.Image]:
+    """Block-wise noise-residual inconsistency: blocks whose noise level differs strongly from the rest
+    (robust z of log residual sd, flatter blocks only, so edges and texture do not dominate). The largest
+    connected group of inconsistent blocks is the candidate region; its error level (JPEG re-save, as ELA)
+    is compared with the rest of the picture."""
+    import io  # noqa: PLC0415
+
+    import cv2  # noqa: PLC0415
+    from scipy.ndimage import label  # noqa: PLC0415
+
+    y = np.asarray(img.convert("L"), dtype=np.float32)
+    b = config.SPLICE_BLOCK_PX
+    h, w = y.shape
+    bh, bw = h // b, w // b
+    if bh < 4 or bw < 4:
+        raise ValueError("picture too small for the splice check")
+    blocks = lambda a: a[: bh * b, : bw * b].reshape(bh, b, bw, b)   # noqa: E731
+    resid = y - cv2.medianBlur(np.clip(y, 0, 255).astype(np.uint8), 3).astype(np.float32)
+    lstd = np.log(blocks(resid).std(axis=(1, 3)) + 0.05)
+    gy, gx = np.gradient(cv2.GaussianBlur(y, (5, 5), 0))
+    grad = blocks(np.hypot(gx, gy)).mean(axis=(1, 3))
+    mean = blocks(y).mean(axis=(1, 3))
+    usable = (grad <= np.quantile(grad, config.SPLICE_FLAT_QUANTILE)) & (mean > 12) & (mean < 243)
+    if usable.sum() < 8:
+        usable = np.ones_like(usable, dtype=bool)
+    med = float(np.median(lstd[usable]))
+    mad = 1.4826 * float(np.median(np.abs(lstd[usable] - med))) or 0.05
+    z = (lstd - med) / max(mad, 0.05)
+    odd = usable & (np.abs(z) >= config.SPLICE_Z)
+    lab, k = label(odd)
+    best = None
+    for i in range(1, k + 1):
+        comp = lab == i
+        size = int(comp.sum())
+        if size < config.SPLICE_MIN_BLOCKS or size > config.SPLICE_MAX_FRACTION * bh * bw:
+            continue
+        score = float(np.abs(z[comp]).mean()) * np.sqrt(size)
+        if best is None or score > best[0]:
+            best = (score, comp, size)
+    bbox, ela_ratio, region_z, size = None, None, 0.0, 0
+    if best:
+        _, comp, size = best
+        rows, cols = np.where(comp)
+        x0, y0 = cols.min() * b / w, rows.min() * b / h
+        x1, y1 = min((cols.max() + 1) * b / w, 1.0), min((rows.max() + 1) * b / h, 1.0)
+        bbox = [round(float(x0), 4), round(float(y0), 4),
+                float(np.floor((x1 - x0) * 1e4) / 1e4), float(np.floor((y1 - y0) * 1e4) / 1e4)]
+        region_z = round(float(np.abs(z[comp]).mean()), 1)
+        buf = io.BytesIO()
+        img.convert("RGB").save(buf, "JPEG", quality=config.ELA_JPEG_QUALITY)
+        buf.seek(0)
+        err = np.abs(np.asarray(img.convert("RGB"), np.float32)
+                     - np.asarray(Image.open(buf).convert("RGB"), np.float32)).mean(axis=2)
+        e = blocks(err).mean(axis=(1, 3))
+        ela_ratio = round(float(e[comp].mean() / (e[~comp].mean() or 1e-6)), 2)
+
+    heat = np.clip(np.abs(z) / (2 * config.SPLICE_Z), 0, 1)
+    rgb = np.stack([heat * 217 + (1 - heat) * 21, heat * 107 + (1 - heat) * 25, heat * 104 + (1 - heat) * 29], axis=-1)
+    im = Image.fromarray(rgb.astype(np.uint8)).resize((bw * 12, bh * 12), Image.NEAREST)
+    if bbox:
+        d = ImageDraw.Draw(im)
+        iw, ih = im.size
+        d.rectangle([bbox[0] * iw, bbox[1] * ih, (bbox[0] + bbox[2]) * iw, (bbox[1] + bbox[3]) * ih],
+                    outline=(232, 236, 239), width=3)
+    return {"bbox": bbox, "region_blocks": size, "region_z": region_z, "ela_ratio": ela_ratio,
+            "blocks": int(bh * bw), "block_px": b}, im
+
+
 # ---------------------------------------------------------------------------------------- video
 
 def temporal_analysis(path) -> dict:
@@ -362,7 +435,7 @@ class SyntheticSignalsWitness(Witness):
     def run(self, ctx: InvestigationContext) -> list[Finding]:
         out: list[Finding] = []
         for inp in [i for i in ctx.inputs if i.kind in ("image", "video", "audio")][: config.SYNTH_MAX_INPUTS]:
-            jobs = {"image": [self._image], "video": [self._video, self._audio], "audio": [self._audio]}[inp.kind]
+            jobs = {"image": [self._image, self._splice], "video": [self._video, self._audio], "audio": [self._audio]}[inp.kind]
             for job in jobs:
                 n = len(out) + 1
                 try:
@@ -380,7 +453,8 @@ class SyntheticSignalsWitness(Witness):
             n=n, status="inconclusive", reliability="low",
             title=f"Synthetic-signal {what} check could not be run",
             summary=f"The {what} check of {inp.name} could not be completed, so it gives no indication either way.",
-            alternatives={"image": IMAGE_ALTERNATIVES, "video": VIDEO_ALTERNATIVES}.get(what, AUDIO_ALTERNATIVES),
+            alternatives={"image": IMAGE_ALTERNATIVES, "video": VIDEO_ALTERNATIVES,
+                          "splice": SPLICE_ALTERNATIVES}.get(what, AUDIO_ALTERNATIVES),
             limitations=[f"Error: {type(exc).__name__}: {exc}", *LIMITATIONS],
             details={"file_id": inp.file_id, "check": what, "strength": "none", "reasons": [],
                      "error": f"{type(exc).__name__}: {exc}"},
@@ -425,6 +499,35 @@ class SyntheticSignalsWitness(Witness):
             evidence=[{"kind": "artifact", "ref": ctx.artifact_ref(spec_name), "label": "Log frequency spectrum (peaks circled)"},
                       {"kind": "artifact", "ref": ctx.artifact_ref(noise_name), "label": "Noise-residual map (brighter = more noise)"}],
             locations=[{"kind": "region", "file_id": inp.file_id, "frame_s": None, "bbox": [0.0, 0.0, 1.0, 1.0]}],
+        )
+
+    # -- splice / compositing localisation (images)
+    def _splice(self, ctx: InvestigationContext, inp: InputRef, n: int) -> Finding:
+        sp, im = splice_analysis(load_image(inp.path))
+        name = f"synthetic_splice_{inp.file_id}.png"
+        im.save(ctx.artifact_path(name))
+        agrees = sp["bbox"] is not None and (sp["ela_ratio"] or 0) >= config.SPLICE_ELA_AGREE_RATIO
+        if sp["bbox"]:
+            title = "Possible pasted-in region (noise level differs from the rest)"
+            summary = (f"{inp.name}: {sp['region_blocks']} blocks with a noise level unlike the rest of the picture "
+                       f"(robust z {sp['region_z']}); the error level there is {sp['ela_ratio']}x the rest"
+                       + (", which agrees with error-level analysis" if agrees else "")
+                       + ". An indicator for a human reviewer, not a verdict.")
+        else:
+            title = "No region with inconsistent noise found"
+            summary = (f"{inp.name}: no group of blocks has a noise level strongly unlike the rest. "
+                       "This does not show the picture is unedited.")
+        return self.finding(
+            n=n, status="inconclusive", reliability="medium" if agrees else "low", title=title, summary=summary,
+            alternatives=SPLICE_ALTERNATIVES,
+            limitations=[*LIMITATIONS, "Block-wise statistics: small pasted objects and regions re-compressed "
+                                       "together with the rest are missed"],
+            details={"file_id": inp.file_id, "check": "splice", "strength": "none", "reasons": [],
+                     "splice": sp, "agrees_with_ela": agrees, "inconsistency_map": ctx.artifact_ref(name)},
+            evidence=[{"kind": "artifact", "ref": ctx.artifact_ref(name),
+                       "label": "Noise-inconsistency map (box = most inconsistent region)"}],
+            locations=([{"kind": "region", "file_id": inp.file_id, "frame_s": None, "bbox": sp["bbox"]}]
+                       if sp["bbox"] else []),
         )
 
     # -- video

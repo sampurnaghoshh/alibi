@@ -30,3 +30,6 @@ demo/**/*.MOV
 .DS_Store
 Thumbs.db
 .idea/
+
+# Downloaded model weights (scripts/download_models.py)
+data/models/

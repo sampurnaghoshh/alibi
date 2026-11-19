@@ -134,10 +134,41 @@ def prepare_rerun(parent_id: str, caption: str, posted_at: datetime) -> Prepared
 
 # --- stage 2: analyse -----------------------------------------------------------------
 
-def _claims(caption: str, posted_at: datetime, store: RunStore) -> list[Claim]:
+def _transcript(p: "Prepared", store: RunStore):
+    """Speech-to-text of the first audio/video input (app/transcribe.py never raises). None = no such input."""
+    from app.transcribe import transcribe  # noqa: PLC0415
+
+    try:
+        tr = transcribe(p.refs)
+    except Exception as exc:  # noqa: BLE001 - belt and braces: transcription must never stop a run
+        log.exception("transcription failed")
+        from app.schemas import Transcript  # noqa: PLC0415
+        tr = Transcript(status="failed", note=f"Speech-to-text failed: {type(exc).__name__}: {exc}")
+    if tr is not None:
+        store.log("transcribed", f"{tr.status}: {tr.text[:80] if tr.text else tr.note}",
+                  data={"transcript": tr.model_dump(mode="json")})
+    return tr
+
+
+def _spoken_claims(text: str, posted_at: datetime, existing: list[Claim]) -> list[Claim]:
+    """Claims from the transcript, with spans in the transcript text; ones the caption already makes are dropped."""
+    seen = {(c.type, c.value.lower()) for c in existing}
+    out = []
+    for c in extract_claims(text, posted_at):
+        if (c.type, c.value.lower()) in seen:
+            continue
+        seen.add((c.type, c.value.lower()))
+        out.append(c.model_copy(update={"id": f"c{len(existing) + len(out) + 1}",
+                                        "source": c.source.model_copy(update={"field": "transcript"})}))
+    return out
+
+
+def _claims(caption: str, posted_at: datetime, store: RunStore, transcript=None) -> list[Claim]:
     """Claim extraction must never stop an investigation (principle 5)."""
     try:
         claims = extract_claims(caption, posted_at)
+        if transcript is not None and transcript.status == "ok":
+            claims += _spoken_claims(transcript.text, posted_at, claims)
     except Exception as exc:  # noqa: BLE001
         log.exception("claim extraction failed")
         store.log("claims_failed", f"{type(exc).__name__}: {exc}", data={"claims": []})
@@ -185,7 +216,8 @@ def execute(p: Prepared, witnesses: Optional[list[Witness]] = None) -> Investiga
     store = p.store
     parent_id = p.parent.id if p.parent else None
     try:
-        claims = _claims(p.caption, p.posted_at, store)
+        transcript = _transcript(p, store)
+        claims = _claims(p.caption, p.posted_at, store, transcript)
 
         # Re-used findings (caption re-runs) are available immediately.
         reused = [remap_claim_ids(f, p.parent.claims, claims) for f in p.reused] if p.parent else []
@@ -221,7 +253,7 @@ def execute(p: Prepared, witnesses: Optional[list[Witness]] = None) -> Investiga
         inv = Investigation(
             id=store.inv_id, created_at=p.created_at, posted_at=p.posted_at, parent_id=parent_id,
             caption=p.caption, inputs=p.inputs, claims=claims, findings=findings,
-            assessment=assessment, graph=graph, history=store.history(),
+            assessment=assessment, graph=graph, history=store.history(), transcript=transcript,
         )
         inv = Investigation.model_validate(inv.model_dump())  # full re-validation incl. cross-references
         store.save_investigation(inv)
