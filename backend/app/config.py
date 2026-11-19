@@ -275,6 +275,15 @@ ENF_60HZ_COUNTRIES = ("US", "CA", "MX", "KR", "TW", "PH", "SA", "CO", "VE", "PE"
                       "HN", "NI", "SV", "DO", "CU", "PR", "BS", "BZ", "LR", "FM", "GU", "AS")
 ENF_MIXED_GRID_COUNTRIES = ("JP", "BR")   # both 50 and 60 Hz in use: never a contradiction
 
+# Prior appearance (§6.4), witness handed over from Adithi. The base settings (PRIOR_SAMPLE_FPS, PRIOR_MAX_HAMMING,
+# PRIOR_MIN_MATCHED_FRAMES, PRIOR_MIN_MATCHED_FRACTION, ARCHIVE_JSON) stay in Adithi's section below.
+PRIOR_SHORT_MAX_HAMMING = 4          # photos / clips with < PRIOR_MIN_MATCHED_FRAMES sampled frames: ONE frame decides,
+                                     # so it must be near-identical (re-saved copies ~0-4 bits; unrelated images ~32)
+PRIOR_DATE_TOLERANCE_DAYS = 2        # verified_date outside the claimed time window +/- 2 days -> disagrees
+PRIOR_LOCATION_TOLERANCE_KM = 50.0   # verified lat/lon > 50 km from the claimed lat/lon -> disagrees. Entries without
+                                     # coordinates: a place-name match can agree, a mismatch is never a contradiction
+PRIOR_MAX_INPUTS = 2                 # check at most 2 images/videos per investigation (speed)
+
 
 # =============================================================================
 # --- Adithi: metadata + weather + prior_appearance + ela ---
