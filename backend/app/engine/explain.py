@@ -75,10 +75,24 @@ def is_safe_rewrite(f: Finding, title: str, summary: str) -> bool:
     return before == after
 
 
+_REWRITE_SYSTEM = (
+    "You reword one finding from a media-verification report for a newsroom reader. "
+    "You receive the finding as JSON. Rewrite only its title and summary in plain English. "
+    "Keep every number exactly as written and do not add new numbers. Do not change the meaning, "
+    "the status or the reliability, and do not add conclusions that are not in the JSON. "
+    "Never use the words fake, real, authentic, proven, definitely or AI-generated. "
+    'Return ONLY JSON: {"title": "...", "summary": "..."}. Title under 90 characters, summary under 300.'
+)
+
+
 def llm_rewrite(f: Finding) -> Optional[tuple[str, str]]:
-    """HOOK (not implemented): send ONLY f.model_dump_json() to the LLM client
-    (app/claims/llm.py, Nooman) and ask for {"title", "summary"} in plain English.
-    Return (title, summary), or None to keep the current text."""
+    """Ask the LLM to reword title/summary, given ONLY the finding JSON.
+    Returns (title, summary) or None. The caller still checks is_safe_rewrite()."""
+    from app.claims import llm  # noqa: PLC0415 - avoid import cycles at module load
+
+    data = llm.complete_json(_REWRITE_SYSTEM, f.model_dump_json(), max_tokens=2000)
+    if isinstance(data, dict) and isinstance(data.get("title"), str) and isinstance(data.get("summary"), str):
+        return data["title"].strip(), data["summary"].strip()
     return None
 
 
@@ -86,18 +100,27 @@ def llm_enabled() -> bool:
     return config.LLM_EXPLAIN and config.LLM_PROVIDER != "none" and config.llm_configured()
 
 
+def _guarded_rewrite(f: Finding) -> Finding:
+    """Apply an LLM rewording only if it passes the guard. Status/reliability/details never change."""
+    try:
+        rewrite = llm_rewrite(f)
+    except Exception as exc:  # noqa: BLE001 - explanations are optional
+        log.warning("LLM rewrite failed for %s: %s", f.id, exc)
+        return f
+    if rewrite and is_safe_rewrite(f, *rewrite):
+        f.title, f.summary = rewrite
+    elif rewrite:
+        log.info("LLM rewrite rejected for %s (numbers changed or forbidden word)", f.id)
+    return f
+
+
 def explain_findings(findings: list[Finding]) -> list[Finding]:
     """Templates for blanks, then (optionally) a guarded LLM rewording. Never raises."""
-    out = []
-    for f in findings:
-        f = fill_missing(f)
-        if llm_enabled():
-            try:
-                rewrite = llm_rewrite(f)
-            except Exception:  # noqa: BLE001 - explanations are optional
-                log.exception("LLM rewrite failed for %s", f.id)
-                rewrite = None
-            if rewrite and is_safe_rewrite(f, *rewrite):
-                f.title, f.summary = rewrite
-        out.append(f)
+    out = [fill_missing(f) for f in findings]
+    if llm_enabled() and out:
+        # One call per finding, in parallel, so the whole step stays within one LLM timeout.
+        from concurrent.futures import ThreadPoolExecutor  # noqa: PLC0415
+
+        with ThreadPoolExecutor(max_workers=min(8, len(out))) as pool:
+            out = list(pool.map(_guarded_rewrite, out))
     return out

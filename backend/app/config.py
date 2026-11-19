@@ -80,8 +80,9 @@ WITNESS_LABELS = {
 # §2.7 / §9: never in UI, report or explanation text. "authentic" covers "authenticity".
 FORBIDDEN_WORDS_RE = r"\b(fake|real|authentic\w*|proven|definitely|AI-generated)\b"
 
-# Explanations (§7.6): let the LLM reword titles/summaries. Off unless a provider is configured.
-LLM_EXPLAIN = os.getenv("ALIBI_LLM_EXPLAIN", "1") == "1"
+# Explanations (§7.6): let the LLM reword titles/summaries. OFF by default: it costs one call per
+# finding (~6 per investigation), which would eat a free-tier daily quota. Set ALIBI_LLM_EXPLAIN=1 to try it.
+LLM_EXPLAIN = os.getenv("ALIBI_LLM_EXPLAIN", "0") == "1"
 
 # ELA (§6.7, taken over from Adithi): ALWAYS inconclusive, reliability low, a weak indicator.
 # The hotspot values only choose the wording and the highlighted region; they never change the status.
@@ -106,7 +107,10 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 
 
 def llm_configured() -> bool:
-    """True when a provider is chosen and its key is present."""
+    """True when a provider is chosen and its key is present.
+
+    Reads module attributes at call time so tests can monkeypatch them.
+    """
     if LLM_PROVIDER == "anthropic":
         return bool(ANTHROPIC_API_KEY)
     if LLM_PROVIDER == "gemini":
@@ -115,16 +119,34 @@ def llm_configured() -> bool:
 
 
 # =============================================================================
-# --- Nooman: claims + lipsync + enf ---
+# --- Sampurna: claims (taken over from Nooman) ---
 # =============================================================================
 
 # Claims (§6.1): part-of-day windows as (start_hour, end_hour); night wraps past midnight.
 PART_OF_DAY_HOURS = {
     "morning": (6, 11),
+    "afternoon": (12, 17),
     "evening": (17, 21),
     "night": (20, 4),
 }
+GAZETTEER_PATH = BACKEND_DIR / "app" / "claims" / "gazetteer.json"
 GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search"
+GEOCODE_CACHE_DIR = CACHE_DIR / "geocode"
+GEOCODE_TIMEOUT_S = 5.0
+
+# Runtime LLM client (app/claims/llm.py): claim extraction + explanation wording only.
+LLM_TIMEOUT_S = 15.0
+# BUDGET RULE: we spend no money on APIs. Default provider is "none" (rules + templates, free, offline).
+# Recommended optional provider: "gemini" with a free Google AI Studio key (free-tier Flash-Lite model).
+# "anthropic" is PAID: supported in code but not to be used. No model is ever called automatically
+# as a fallback; on any refusal or error we fall back to rules/templates.
+LLM_DEFAULT_MODEL = {"gemini": "gemini-2.5-flash-lite", "anthropic": "claude-haiku-5-5"}  # override with ALIBI_LLM_MODEL
+LLM_EFFORT = "low"                   # Anthropic effort: short extraction/rewording tasks, keep latency down
+
+
+# =============================================================================
+# --- Nooman: lipsync + enf ---
+# =============================================================================
 
 # Lip-sync synchrony indicator (§6.5). Calibrate on >= 5 genuine phone clips.
 LIPSYNC_MIN_FACE_FRACTION = 0.50     # face detected in >= 50% of sampled frames

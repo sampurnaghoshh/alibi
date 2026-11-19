@@ -24,9 +24,30 @@ cd backend
 py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-Copy-Item .env.example .env      # then edit if you have an LLM key
+Copy-Item .env.example .env      # keep ALIBI_LLM_PROVIDER=none for the demo
 uvicorn app.main:app --reload --port 8000
 ```
+
+### LLM: optional, and free only
+
+**Budget rule: we spend no money on APIs.** The default is `ALIBI_LLM_PROVIDER=none`, and **the demo runs with `none`**: claims come from the offline rules path (gazetteer + date rules) and explanations from templates. The LLM only ever extracts claims (and, if enabled, rewords explanations); it never decides a verdict. On any error, refusal or rate limit, ALIBI falls back to rules. No other model is ever called automatically.
+
+If you want to try the LLM path, use **Gemini with a free Google AI Studio key**:
+
+1. Go to <https://aistudio.google.com/apikey> and sign in with a Google account.
+2. Click **Create API key**. Let it create a new project, and **do not enable billing** on that project. Without billing the key can only use the free tier, so it can never be charged.
+3. In `backend/.env` set:
+   ```
+   ALIBI_LLM_PROVIDER=gemini
+   GEMINI_API_KEY=<your key>
+   ```
+   The default model is `gemini-2.5-flash-lite` (a free-tier Flash-Lite model). If AI Studio no longer lists it, set `ALIBI_LLM_MODEL` to a current free-tier Flash or Flash-Lite model from AI Studio's model list.
+4. Restart the backend. `GET /api/health` shows `"llm": {"provider": "gemini", "configured": true}`.
+
+Notes:
+- Free-tier daily limits are small. Claim extraction uses one call per investigation. Rewording findings (`ALIBI_LLM_EXPLAIN=1`) adds about 6 calls per investigation, so it is off by default.
+- On the free tier, Google may use prompts to improve its products. Captions are sent to Google, so don't use real case material with the LLM on.
+- `anthropic` is supported in code but is **paid: do not use it**.
 
 If activation is blocked: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
 

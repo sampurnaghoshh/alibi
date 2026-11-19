@@ -49,8 +49,8 @@ ALIBI treats each kind of evidence (caption text, metadata, weather records, ear
 
 | Person | AI tools | Owns | Files |
 |---|---|---|---|
-| **Sampurna** (lead) | Claude Code (Opus) in VS Code | Repo skeleton, **evidence contract**, **rule engine**, graph builder, FastAPI app, storage, report, integration, final merges, **ELA witness** and **archive builder** (taken over from Adithi) | `backend/app/main.py`, `schemas.py`, `engine/*`, `storage.py`, `report.py`, `pipeline.py`, `media.py`, `shared/*`, `witnesses/ela.py`, `scripts/build_archive.py`, `scripts/warm_cache.py` |
-| **Nooman** | Claude Code (Opus) in VS Code | **Claim extraction** (LLM + rule fallback), **lip-sync witness**, **ENF audio witness** (conditional), calibration scripts | `backend/app/claims/*`, `witnesses/lipsync.py`, `witnesses/enf.py`, `scripts/calibrate_*.py`, `scripts/test_enf.py` |
+| **Sampurna** (lead) | Claude Code (Opus) in VS Code | Repo skeleton, **evidence contract**, **rule engine**, graph builder, FastAPI app, storage, report, integration, final merges, **claim extraction** + LLM client (taken over from Nooman), **ELA witness** and **archive builder** (taken over from Adithi) | `backend/app/main.py`, `schemas.py`, `engine/*`, `storage.py`, `report.py`, `pipeline.py`, `media.py`, `claims/*`, `shared/*`, `witnesses/ela.py`, `scripts/build_archive.py`, `scripts/warm_cache.py` |
+| **Nooman** | Claude Code (Opus) in VS Code | **Lip-sync witness**, **ENF audio witness** (conditional), calibration scripts | `witnesses/lipsync.py`, `witnesses/enf.py`, `scripts/calibrate_*.py`, `scripts/test_enf.py` |
 | **Adithi** | Free LLMs | **Metadata witness**, **weather witness**, **prior-appearance witness** | `witnesses/metadata.py`, `witnesses/weather.py`, `witnesses/prior_appearance.py` |
 | **Dhruva** | Free LLMs | **Entire frontend**: upload page, investigation dashboard, contradiction graph, witness cards, evidence drawer, report view, demo polish | `frontend/*` |
 
@@ -197,7 +197,7 @@ A list, newest first. Fetch the full `Investigation` by `id` for anything else. 
 
 | # | Witness | Owner | Status | Max reliability |
 |---|---|---|---|---|
-| 1 | Claim extraction (not a witness, it feeds everything) | Nooman | **Must** | n/a |
+| 1 | Claim extraction (not a witness, it feeds everything) | Sampurna (from Nooman) | Done | n/a |
 | 2 | Metadata integrity | Adithi | **Must** | medium |
 | 3 | Weather (grid + 72 h) | Adithi | **Must** | medium |
 | 4 | Prior appearance (perceptual-hash archive) | Adithi | **Must** | high |
@@ -228,7 +228,15 @@ Every module ships with a `__main__` block so it can run alone:
 
 All thresholds below are **starting values. Calibrate them on genuine clips** and record the final values in `backend/app/config.py`.
 
-### 6.1 Claim extraction (Nooman): `app/claims/extract.py`
+### 6.1 Claim extraction (Sampurna, taken over from Nooman; done): `app/claims/extract.py`
+- **Done.** Rules path is fully offline: `gazetteer.json` (~250 places with coordinates and alternate spellings) means no geocoding call for known places. Also handles afternoon (12:00–17:00), "N days ago", "N hours ago" (precision `hour`), weekdays, "last week" (`week`), "Month YYYY" (`month`), "in YYYY" (`year`), and simple speaker patterns. The same place/condition/time mentioned twice is kept once (first mention). Times use `posted_at`'s timezone, IST if none.
+- LLM claims are added only where the rules found nothing; overlapping spans keep the rules version.
+- **Budget rule: we spend no money on APIs.**
+  - Default `ALIBI_LLM_PROVIDER=none` (rules + templates, free, offline). **The demo runs with `none`.**
+  - Recommended optional provider: `gemini` with a free Google AI Studio key from a project without billing (setup steps in README). Default model `gemini-2.5-flash-lite` (free tier), override with `ALIBI_LLM_MODEL`.
+  - `anthropic` is **paid: do not use**. The code still supports it, but it is never the default and never called automatically.
+  - One call to the configured model, 15 s timeout, no retries, **no fallback models**. On any refusal, error or rate limit: rules only.
+  - LLM rewording of findings (§7.6) is off by default (`ALIBI_LLM_EXPLAIN=0`) to save free-tier quota.
 - Input: caption, posted_at. Output: `list[Claim]`.
 - **LLM path:** provider-agnostic client in `app/claims/llm.py`, chosen by env vars `ALIBI_LLM_PROVIDER` (`anthropic` | `gemini` | `none`), `ALIBI_LLM_MODEL`, and the API key. Ask for strict JSON: claims with `type`, `value`, `source_text`. **Compute `start/end` yourself** with `caption.find(source_text)` and drop the claim if it isn't found.
 - **Rules fallback (must work offline, used when provider = none or the LLM fails):**
@@ -397,12 +405,13 @@ cd frontend && npm install && npm run dev   # http://localhost:3000
 
 ### Environment (`backend/.env`, never commit)
 ```
-ALIBI_LLM_PROVIDER=none        # anthropic | gemini | none
-ALIBI_LLM_MODEL=
-ANTHROPIC_API_KEY=
+ALIBI_LLM_PROVIDER=none        # none (default, demo) | gemini (free AI Studio key) | anthropic (paid, do not use)
+ALIBI_LLM_MODEL=               # empty = gemini-2.5-flash-lite
 GEMINI_API_KEY=
+ALIBI_LLM_EXPLAIN=0
+ANTHROPIC_API_KEY=             # paid, do not use
 ```
-Note: a Claude Code subscription is not an API key. The app's runtime LLM needs its own key, or falls back to rules.
+Budget rule: no money is spent on APIs (§6.1). A Claude Code subscription is not an API key; the app's runtime LLM is optional, and without one it uses rules.
 
 ---
 
