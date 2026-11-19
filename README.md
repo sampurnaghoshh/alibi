@@ -1,191 +1,139 @@
-# ALIBI: Explainable Multimedia Verification
+<div align="center">
 
-> Every piece of media has an alibi. We check whether it holds up.
+# ALIBI.
 
-ALIBI treats each kind of evidence (caption, metadata, weather records, earlier appearances, audio, lip movement) as a **witness**, cross-examines their statements against the claims the media makes, and produces an explainable investigation report. It is an evidence report, not a verdict: human review is always required.
+### Every piece of media has an alibi. We check whether it holds up.
 
-Full spec, contract and ownership: [CLAUDE.md](CLAUDE.md).
+**Explainable multimodal media verification.** Team **“Pick Me”**, SapthaHacks 2026 (InnovEdge), **Problem Statement 04: TruthLens**
 
-## Prerequisites (Windows)
+![PS04 TruthLens](https://img.shields.io/badge/PS04-TruthLens-83B6D1) ![Tests](https://img.shields.io/badge/tests-370%20passing-69B88A) ![False alarms](https://img.shields.io/badge/false%20contradictions%20on%20controls-0-69B88A) ![Runtime cost](https://img.shields.io/badge/runtime%20cost-%E2%82%B90-83B6D1) ![License](https://img.shields.io/badge/license-MIT-929CAA)
 
-- Python 3.12 (`py -3.12 --version`)
-- Node 24 (`node --version`)
-- `ffmpeg` / `ffprobe` and `exiftool` on PATH:
-  ```powershell
-  winget install Gyan.FFmpeg
-  winget install OliverBetz.ExifTool
-  ```
-  Open a new terminal afterwards, then check with `ffprobe -version` and `exiftool -ver`.
+**[Live app](https://alibi-xi.vercel.app)** · **[Demo video](LINKEDIN_VIDEO_URL)** · **[Setup guide](docs/SETUP.md)**
 
-## Backend
+</div>
 
-```powershell
-cd backend
-py -3.12 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-Copy-Item .env.example .env      # keep ALIBI_LLM_PROVIDER=none for the demo
-uvicorn app.main:app --reload --port 8000
+---
+
+## The problem
+
+Most viral misinformation isn't a deepfake. It's **real footage with a false story**: an old flood video reshared as "today in Chennai", a genuine clip given a new place and date. A pixel-level deepfake detector calls that footage authentic, because it is. The lie lives in the **context**: where, when, what and who.
+
+## What ALIBI does
+
+ALIBI treats every kind of evidence as a **witness**: the caption, the file's metadata, historical weather records, earlier appearances of the same footage, the audio, and lip movement. A **deterministic rule engine** cross-examines those witnesses against the claims the media makes and produces an **explainable forensic report**: what is consistent, what contradicts, what is inconclusive, why, from which evidence, and what else could explain it.
+
+> **It is an evidence report, not a verdict.** Human review is required on every result.
+
+![Live Desk: Case A](docs/pitch/screenshots/livedesk_casea.png)
+
+## AI & manipulation check
+
+Upload any **image, video or audio** file, with or without a caption, and ALIBI answers the question first: **"Is this media AI-generated or manipulated?"**
+
+- **AI: DETECTED** when the file carries an AI-provenance marker: C2PA content credentials naming an AI tool, IPTC `DigitalSourceType = trainedAlgorithmicMedia / compositeSynthetic`, or generator tags (DALL·E / ChatGPT, Midjourney, Adobe Firefly, Stable Diffusion, Imagen, Gemini). ALIBI names the exact tool.
+- **EDITED: DETECTED** when editing-software traces are present.
+- **AI: NOT DETECTED** when neither is found. ALIBI never calls media "real": most AI-generated media carries no marker, so a missing marker is reported as exactly that.
+
+With a caption, ALIBI then cross-examines the **story** (place, time, event) against the evidence.
+
+## Results we measured
+
+| | |
+|---|---|
+| **Case A: genuine clip, false caption** ("Massive flooding in Chennai yesterday evening") | **Prior appearance: contradiction (high).** 12 of 12 sampled frames match a clip verified as recorded in Jalahalli, Bengaluru on 5 Oct 2026: **296 km and 44 days** from the claim. **Weather: contradiction (medium).** 0.0 mm of rain in Chennai that evening, at all 4 surrounding points, and over the previous 72 h. → *"The stated context is not supported by the available evidence."* |
+| **Live test: a lie on a fresh phone clip** ("Heavy flood in Delhi yesterday", recorded minutes earlier in Bengaluru, sent via Telegram) | **Metadata: contradiction.** The capture time falls outside the claimed window (18.6 h after it in our replay). **Weather: contradiction.** No recorded rain in Delhi. Total: **≈ 6 s** on a laptop, streamed live. |
+| **Weather witness isn't biased** | The same witness confirms the real Chennai floods of 2 Dec 2015 (**57.9 mm** in the window, **119.2 mm** over 72 h → consistent). |
+| **Validation** | **370 automated tests** · **0 false contradictions** on genuine control clips never used for tuning · **≈ 3.6 s** median per investigation (57 runs) · **₹0** runtime cost, offline-capable |
+
+## How it works
+
+```mermaid
+flowchart LR
+  U[Upload page / Telegram bot] --> I[Ingest<br/>SHA-256 + read-only originals<br/>+ chain-of-custody log]
+  I --> C[Claim extraction<br/>place · time · event · speaker<br/>tied to exact caption characters]
+  C --> W{6 witnesses<br/>in parallel}
+  W --> F[Findings validated against<br/>a strict evidence contract]
+  F --> R[Deterministic rule engine<br/>evidence families<br/>correlated evidence counted once]
+  R --> G[Evidence graph]
+  R --> L[Live Desk, real time]
+  R --> P[Printable forensic report]
+  R --> T[Telegram reply + report]
 ```
 
-### Offline install (venue Wi-Fi is slow or down)
+**The LLM never decides truth.** Verdicts come from deterministic code and transparent rules. The default runtime uses no LLM at all (rules + templates), works offline and costs nothing.
 
-A pre-downloaded set of wheels for every package in `requirements.txt` lives in `C:\Dev\wheels` on Sampurna's laptop (85 files, about 222 MB). It was built with:
+### The six witnesses
 
-```powershell
-cd backend
-.\.venv\Scripts\Activate.ps1
-pip download -d C:\Dev\wheels -r requirements.txt --timeout 120 --retries 10 --resume-retries 20
+| Witness | Family | What it checks | Technique | Max reliability |
+|---|---|---|---|---|
+| Metadata integrity | Context | Capture time and GPS vs the claim; AI-provenance markers; editing and re-encode traces | ExifTool + ffprobe; timezone-aware window rule (±12 h); C2PA / IPTC parsing | Medium |
+| Weather | Context | Was it raining where and when the caption claims? | Open-Meteo historical data; 5-point grid (±15 km) + 72 h history | Medium |
+| Prior appearance | Context | Has this footage appeared before, with a verified date and place? | Perceptual hashing (pHash) of sampled frames; Hamming distance ≤ 8 | High |
+| Lip-sync indicator | Signal | Do mouth movements match the audio? | MediaPipe face landmarks vs audio envelope; windowed cross-correlation | Low (never accuses) |
+| Power-grid hum (ENF) | Signal | 50/60 Hz mains hum in the audio | STFT spectral SNR | Display only |
+| Error-level analysis | Pixels | Compression differences in images and keyframes | JPEG re-save difference heatmap | Low (visual aid) |
+
+### How the rule engine decides
+
+```mermaid
+flowchart TD
+  A[All findings] --> B{Any HIGH-reliability contradiction<br/>or contradictions in 2+ families?}
+  B -- yes --> N[Context not supported /<br/>signals inconsistent]
+  B -- no --> C{Exactly one family with<br/>a MEDIUM contradiction?}
+  C -- yes --> P[Partially supported]
+  C -- no --> D{2+ families consistent<br/>and no contradictions?}
+  D -- yes --> S[No contradictions found so far]
+  D -- no --> I[Insufficient evidence]
+  A --> X[Low-reliability contradictions → weak indicators only]
+  N & P & S & I --> H[Human review always required]
 ```
 
-To install on another laptop without internet:
+## Honesty by design
 
-1. Copy the whole `wheels` folder to that laptop (USB stick or local file share), e.g. to `C:\Dev\wheels`.
-2. Create and activate the venv:
-   ```powershell
-   cd backend
-   py -3.12 -m venv .venv
-   .\.venv\Scripts\Activate.ps1
-   ```
-3. Install from the folder only (`--no-index` means pip never goes online):
-   ```powershell
-   pip install --no-index --find-links C:\Dev\wheels -r requirements.txt
-   ```
+Two witnesses **failed our own tests**, so ALIBI doesn't let them accuse:
 
-The wheels are for **Windows 64-bit + Python 3.12** only. A different OS or Python version needs its own `pip download`. `ffmpeg` and `exiftool` are not pip packages; copy their installers separately.
+- **Power-grid hum (ENF):** on 5 genuine iPhone recordings, the best cleared our threshold in **43% of frames** (60% required). One showed a spurious 60 Hz trace, which the rules correctly ignored. → Always *"insufficient signal"*: it can't accuse, and it can't vouch.
+- **Lip-sync:** calibrated on 5 close-up genuine clips and tested on 5 held-out ones plus swapped-audio clips. No threshold separated them, and our genuine source even scored *less* in sync (**0.103**) than the swap (**0.193**). → Shown for human review, never a contradiction.
 
-### LLM: optional, and free only
+**Absence of evidence is never evidence of fabrication.** Missing metadata, no hum or no archive match is always *inconclusive*, and every finding must list its **alternative explanations** and **limitations**. The schema rejects any finding that doesn't.
 
-**Budget rule: we spend no money on APIs.** The default is `ALIBI_LLM_PROVIDER=none`, and **the demo runs with `none`**: claims come from the offline rules path (gazetteer + date rules) and explanations from templates. The LLM only ever extracts claims (and, if enabled, rewords explanations); it never decides a verdict. On any error, refusal or rate limit, ALIBI falls back to rules. No other model is ever called automatically.
+## PS04 compliance
 
-If you want to try the LLM path, use **Gemini with a free Google AI Studio key**:
+| PS04 capability | Delivered in ALIBI |
+|---|---|
+| Image authenticity | AI-provenance markers (C2PA, IPTC source type, generator tags), editing traces, error-level analysis, archive frame matching |
+| Video forensics | Lip-sync synchrony, keyframe ELA, frame-by-frame archive matching |
+| Audio and voice analysis | Power-grid hum (ENF) analysis, audio-visual synchrony |
+| Text and context analysis | Claims tied to exact caption characters, checked against weather, archive and metadata |
+| Cross-modal correlation | Evidence graph and evidence families; correlated evidence counted once |
+| Manipulation indicators | Flagged regions, frames, timestamps and metadata observations |
+| Confidence and uncertainty | Reliability per finding; alternatives and limitations mandatory |
+| Forensic report and traceability | Printable report, SHA-256 chain of custody, full analysis history |
+| Preserve evidence, human review | Read-only originals; "Human review required" on every surface |
 
-1. Go to <https://aistudio.google.com/apikey> and sign in with a Google account.
-2. Click **Create API key**. Let it create a new project, and **do not enable billing** on that project. Without billing the key can only use the free tier, so it can never be charged.
-3. In `backend/.env` set:
-   ```
-   ALIBI_LLM_PROVIDER=gemini
-   GEMINI_API_KEY=<your key>
-   ```
-   The default model is `gemini-2.5-flash-lite` (a free-tier Flash-Lite model). If AI Studio no longer lists it, set `ALIBI_LLM_MODEL` to a current free-tier Flash or Flash-Lite model from AI Studio's model list.
-4. Restart the backend. `GET /api/health` shows `"llm": {"provider": "gemini", "configured": true}`.
+## The forensic report
 
-Notes:
-- Free-tier daily limits are small. Claim extraction uses one call per investigation. Rewording findings (`ALIBI_LLM_EXPLAIN=1`) adds about 6 calls per investigation, so it is off by default.
-- On the free tier, Google may use prompts to improve its products. Captions are sent to Google, so don't use real case material with the LLM on.
-- `anthropic` is supported in code but is **paid: do not use it**.
+Every investigation exports a printable report covering everything PS04 §05 asks for: **flagged evidence** (regions, frames, timestamps, matched frame pairs), the **indicator** and why it was flagged, **cross-modal context**, **confidence** with limitations, the **source trace** (SHA-256 of each original, read-only storage, millisecond-stamped history) and a **summary** with recommended human checks.
 
-If activation is blocked: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
+## Try it
 
-Tests:
-```powershell
-cd backend
-.\.venv\Scripts\Activate.ps1
-pytest -q
-```
+- **Web app:** [alibi-xi.vercel.app](https://alibi-xi.vercel.app). Upload any image, video or audio file (caption optional) for the AI & manipulation check, add a caption to verify its story, or press **Case A**. (The analysis server runs on our forensic workstation during the event.)
+- **Live Desk:** the big-screen investigation room, linked from the app header.
+- **Telegram:** send a file (5–8 s clip or image) **as a File**, with or without a caption, to the team's verification bot and get the findings and the report back.
+- **Run it yourself:** see [docs/SETUP.md](docs/SETUP.md).
 
-Run a single witness on its own (example):
-```powershell
-python -m app.witnesses.weather --caption "Massive flooding in Chennai yesterday evening" --posted-at 2026-11-19
-```
+## Tech stack
 
-### Telegram bot (Live Desk)
+**Backend:** Python 3.12, FastAPI, Pydantic v2 · **Analysis:** OpenCV, MediaPipe, librosa, imagehash, ExifTool, FFmpeg · **Data:** Open-Meteo · **Frontend:** Next.js, TypeScript, Tailwind, React Flow · **Live Desk:** vanilla JS + Cytoscape.js (fully offline) · **Bot:** Telegram Bot API · **Deploy:** Vercel (frontend) + workstation backend through a Cloudflare tunnel; Dockerfile included.
 
-Judges send a clip to a Telegram bot. They get the claims at once, live progress, then the result and a printable report. Replying to the result with a new caption re-checks the same file. It's free: long polling, no public URL or tunnel needed.
+## Roadmap
 
-1. **Create the bot:** in Telegram, talk to **@BotFather** → `/newbot` → copy the token.
-2. **Configure** `backend/.env` (see `.env.example`):
-   ```
-   TELEGRAM_BOT_TOKEN=<token from BotFather>
-   TELEGRAM_ALLOWED_CHAT_IDS=<your chat id>      # optional, comma-separated
-   TELEGRAM_PASSCODE=<a word only the team knows>
-   ```
-   Only allowed chats are served. Any other chat can join by sending `/start <passcode>` (stored in `data/bot_chats.json`, gitignored). Everything else is ignored.
-3. **Run it next to the API**, as a second process, in two terminals:
-   ```powershell
-   cd backend; .\.venv\Scripts\Activate.ps1; uvicorn app.main:app --port 8000
-   cd backend; .\.venv\Scripts\Activate.ps1; python -m app.bot
-   ```
-   The bot talks to `ALIBI_API_URL` (default `http://127.0.0.1:8000`; `localhost` adds ~2 s per connection on Windows). It never prints or logs the token.
+Reverse-image search and fact-checker database integration · sun-shadow time-of-day estimation · voice briefings to on-duty reviewers in Indian languages · lip-sync calibrated on larger datasets.
 
-**How judges should send a clip:** record 5–8 s in 1080p, then tap 📎 → **File** (not Gallery/Video) and put the claim in the caption, e.g. "Heavy rain in Bengaluru this afternoon".
-- A normal video upload makes Telegram strip the capture date and GPS. The bot warns about that, and metadata comes out inconclusive.
-- Bots can't download files over 20 MB, so a long 4K clip gets a polite "send a shorter clip".
+## Team “Pick Me”
 
-### Live Desk page (big screen)
-
-With the API running, open **<http://127.0.0.1:8000/live>** on the projector and press **F11**.
-- **Idle screen:** shows "Send a clip to @your_bot" and a QR code. The username comes from `TELEGRAM_BOT_USERNAME`, or from Telegram when the API starts.
-- **New cases open automatically,** whether from the Telegram bot, an upload, a demo button or a re-run. The caption, witness tiles, graph and headline fill in as the investigation's events arrive.
-- **Shortcuts:** `/live?id=inv_…` reopens a case; **I** or **Esc** toggles the idle screen.
-- **Offline:** it needs no internet connection. The graph and QR libraries are local files (see `backend/app/live/static/README.md`).
-
-## Frontend
-
-```powershell
-cd frontend
-npm install
-$env:NEXT_PUBLIC_API_URL = "http://localhost:8000"
-npm run dev                      # http://localhost:3000
-```
-
-(Or put `NEXT_PUBLIC_API_URL=http://localhost:8000` in `frontend/.env.local`.)
-
-The frontend is a static export (`npm run build` writes `frontend/out`). The investigation page is
-`/investigation/?id=inv_…`. When `frontend/out` exists, the API serves it at `/`, so one URL serves the
-upload page, the investigation page, `/live` and `/api/*`.
-
-## Deployment
-
-**Frontend on Vercel (free) + backend on the forensic workstation (this laptop) through a Cloudflare
-quick tunnel.** Hugging Face no longer offers free Docker Spaces, so the earlier one-container Space
-plan is not used (the `Dockerfile` still works on any Docker host).
-
-1. **Backend + tunnel (laptop):**
-   ```powershell
-   winget install --id Cloudflare.cloudflared            # once
-   powershell -ExecutionPolicy Bypass -File scripts\serve_prod.ps1 -Tunnel
-   ```
-   `serve_prod.ps1` runs uvicorn on `127.0.0.1:8000` with **one worker and no `--reload`** (the Live
-   Desk feed and background jobs live in that process). `-Tunnel` opens `cloudflared tunnel --url
-   http://localhost:8000` in a second window, which prints the public `https://....trycloudflare.com` URL.
-   A quick tunnel gets a **new URL every time** it starts.
-2. **Frontend (Vercel):** project root directory `frontend`, environment variable
-   `NEXT_PUBLIC_API_URL` = the tunnel URL (no trailing slash). The URL is fixed at build time, so after
-   a new tunnel URL: update the variable and **Redeploy**. `frontend/vercel.json` pins the Next.js
-   preset; the build is a static export.
-3. **CORS:** the API accepts browser calls from `https://*.vercel.app`, `https://*.trycloudflare.com`,
-   the local dev server, and any extra origins in `ALIBI_CORS_ORIGINS` (comma-separated, in
-   `backend/.env`), e.g. a custom domain.
-4. **Offline:** when the API can't be reached (laptop off, tunnel down), the site shows "The analysis
-   server is offline right now. The live demo runs on our forensic workstation." instead of errors.
-5. **Live Desk:** `<tunnel URL>/live` (the frontend's "Live Desk" link points there). The Telegram bot
-   runs on the laptop as usual (`python -m app.bot`).
-
-**One container (any Docker host):** `docker build -t alibi .` then `docker run --rm -p 7860:7860 alibi`
-serves the frontend, `/live` and `/api/*` on one URL; the Telegram bot starts inside it only when
-`TELEGRAM_BOT_TOKEN` is set. `deploy/huggingface/` (the old Space config) is kept for reference.
+**Sampurna Ghosh** (lead: evidence contract, rule engine, integration, Live Desk, bot) · **Mohammed Nooman** (lip-sync, ENF, prior appearance, calibration) · **Adithi Bhat** (metadata, weather, verified archive) · **Dhruva Prasad BV** (web frontend)
 
 ## Licence
 
-Code: MIT (`LICENSE`). Third-party components, Open-Meteo weather data (CC BY 4.0) and the team-recorded
-demo media: see `THIRD_PARTY_NOTICES.md`.
-
-## Layout
-
-```
-backend/app/        FastAPI app, contract (schemas.py), engine/, claims/, witnesses/
-backend/tests/      pytest, one file per module
-frontend/           Next.js + TypeScript + Tailwind
-shared/             contract.schema.json + fixtures/sample_investigation.json
-scripts/            build_archive, calibration, warm_cache
-data/archive/       verified clips + archive.json (committed)
-data/cache/         API cache (gitignored; warm before demo)
-data/runs/          investigations (gitignored)
-demo/               case_a/, case_b/, controls/
-```
-
-## Git
-
-- `main` must always run. Branches: `<name>/<module>`. Sampurna merges.
-- Never commit `.env`, `data/runs/`, `data/cache/`, or large videos.
+Code: MIT ([LICENSE](LICENSE)). Third-party components, Open-Meteo data (CC BY 4.0) and team-recorded demo media: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
