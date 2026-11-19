@@ -24,6 +24,8 @@ except ImportError:
 # --- Sampurna: engine ---
 # =============================================================================
 
+APP_VERSION = "0.3.0"
+
 # Paths
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 REPO_ROOT = BACKEND_DIR.parent

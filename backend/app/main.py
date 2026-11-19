@@ -9,7 +9,6 @@ Run (from backend/):  uvicorn app.main:app --reload --port 8000
 
 from __future__ import annotations
 
-import html
 import logging
 import shutil
 from typing import Any, Optional
@@ -21,13 +20,14 @@ from pydantic import ValidationError
 
 from app import config
 from app.pipeline import Upload, run_investigation
+from app.report import render_report
 from app.runner import all_witnesses
 from app.schemas import Investigation, InvestigationSummary
 from app.storage import RunStore, list_investigations, parse_posted_at
 
 log = logging.getLogger("alibi.api")
 
-app = FastAPI(title="ALIBI", description="Explainable multimedia verification", version="0.2.0")
+app = FastAPI(title="ALIBI", description="Explainable multimedia verification", version=config.APP_VERSION)
 
 app.add_middleware(
     CORSMiddleware,
@@ -103,23 +103,9 @@ def get_file(inv_id: str, path: str) -> FileResponse:
 
 @app.get("/api/investigations/{inv_id}/report", response_class=HTMLResponse)
 def get_report(inv_id: str) -> str:
-    """Printable report (browser -> Save as PDF). Placeholder until report.py exists."""
+    """Printable report (browser -> Save as PDF), self-contained with embedded artifact images."""
     inv = _get(inv_id)
-    e = html.escape
-    rows = "".join(
-        f"<tr><td>{e(f.witness)}</td><td>{e(f.status)}</td><td>{e(f.reliability)}</td>"
-        f"<td><b>{e(f.title)}</b><br>{e(f.summary)}</td></tr>"
-        for f in inv.findings
-    )
-    return f"""<!doctype html><html><head><meta charset="utf-8"><title>ALIBI report {e(inv.id)}</title>
-<style>body{{font-family:system-ui;margin:2rem;max-width:60rem}}td,th{{border:1px solid #ccc;padding:.4rem;vertical-align:top}}table{{border-collapse:collapse}}</style>
-</head><body>
-<h1>ALIBI investigation report</h1>
-<p><b>Human review required. This is an evidence report, not a verdict.</b></p>
-<p>ID: <code>{e(inv.id)}</code><br>Caption: {e(inv.caption)}</p>
-<h2>{e(inv.assessment.headline_text)}</h2>
-<table><tr><th>Witness</th><th>Status</th><th>Reliability</th><th>Finding</th></tr>{rows}</table>
-</body></html>"""
+    return render_report(inv, RunStore(inv_id))
 
 
 @app.get("/api/health")
