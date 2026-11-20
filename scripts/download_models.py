@@ -12,8 +12,12 @@ Each file's size is checked against the Hugging Face listing after download.
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
+
+# Plain HTTP downloads: the xet transfer stalled on slow venue Wi-Fi.
+os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
 
 REPO = Path(__file__).resolve().parents[1]
 MODELS = {

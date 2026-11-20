@@ -130,7 +130,7 @@ Every investigation exports a printable report covering everything PS04 §05 ask
 
 - **No trained AI-image classifier.** The two permissively licensed ONNX detectors we tried did not qualify: one failed calibration (genuine control frames scored higher than our AI images), and the other could not be downloaded and verified within our time limit on venue Wi-Fi. AI detection rests on provenance markers and signal-level indicators.
 - **Signal-level AI indicators are weak on re-encoded images.** On our 5 AI test images, 4 show "AI SIGNALS: WEAK" and none "STRONG": re-saving as WebP/JPEG removes the spectral traces. The noise thresholds are tuned on very few genuine photos.
-- **Speech-to-text** uses the small "tiny" model on the first 30 s; it can mishear place names, and without the downloaded model it is skipped with a stated limitation.
+- **Speech-to-text** is wired and tested (with a mocked model), but the 75 MB "tiny" model did not finish downloading on venue Wi-Fi within our time limit, so on our workstation transcription is currently skipped with a stated limitation. Run `scripts/download_models.py` to enable it. It covers the first 30 s and can mishear place names.
 - **Lip-sync and power-grid hum never accuse** (see Honesty by design), and the verified archive is small.
 
 ## Tech stack
