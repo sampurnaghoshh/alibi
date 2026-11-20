@@ -8,7 +8,7 @@
 
 ![PS04 TruthLens](https://img.shields.io/badge/PS04-TruthLens-83B6D1) ![Tests](https://img.shields.io/badge/tests-389%20passing-69B88A) ![False alarms](https://img.shields.io/badge/false%20contradictions%20on%20controls-0-69B88A) ![Runtime cost](https://img.shields.io/badge/runtime%20cost-%E2%82%B90-83B6D1) ![License](https://img.shields.io/badge/license-MIT-929CAA)
 
-**[Live app](https://alibi-xi.vercel.app)** · **[Demo video](LINKEDIN_VIDEO_URL)** · **[Setup guide](docs/SETUP.md)**
+**[Live app](https://alibi-xi.vercel.app)** · **[Demo video](https://www.linkedin.com/posts/sampurna-ghosh-a832592b9_sapthahacks26-hackathon-digitalforensics-ugcPost-7529362493727576064-KTqE/?highlightedUpdateUrn=urn%3Ali%3Aactivity%3A7529362595926052864&highlightedUpdateType=SOCIAL_SHARE&origin=SOCIAL_SHARE&utm_source=social_share_send&utm_medium=member_desktop_web&rcm=ACoAAExjv8MBDYuxiXASxqjQBqIdwVIV6wUMFyc)** · **[Setup guide](docs/SETUP.md)**
 
 </div>
 
